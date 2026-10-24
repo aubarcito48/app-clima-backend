@@ -6,9 +6,9 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK02: configuración base implementada y verificada.** Django inicia sin base de datos, con configuración local/producción, credenciales por entorno y CORS explícito para Angular local. El usuario administra el tablero Kanban.
+**TK03: contrato v1, validación de entradas y health implementados.** Django opera sin base de datos, con configuración local/producción, credenciales por entorno y CORS explícito para Angular local. El usuario administra el tablero Kanban.
 
-Todavía no se implementaron endpoints de salud o clima ni llamadas a OpenWeather/Groq. Los endpoints empiezan en TK03. Con DEBUG true y rutas todavía vacías, Django muestra su página de bienvenida con HTTP 200; con DEBUG false, una ruta inexistente devuelve 404. La bienvenida no es un health check ni una respuesta de la API.
+`GET /api/v1/health/` responde 200 con `{"estado":"ok"}`. `GET /api/v1/clima/` valida los parámetros: una entrada inválida devuelve 400 y una válida devuelve por ahora 503, porque la integración con los proveedores empieza en las tareas siguientes. No se devuelve clima inventado ni se consulta OpenWeather/Groq.
 
 La numeración TK01–TK10 de este repositorio es independiente de la del frontend. En las conversaciones y referencias cruzadas se debe indicar siempre a qué repositorio pertenece cada tarea. Los requisitos e historias del backend usan el prefijo BE.
 
@@ -43,13 +43,15 @@ Desde `app-clima-backend`, en PowerShell:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .venv\Scripts\python.exe scripts/create_local_env.py
 .venv\Scripts\python.exe manage.py check
 .venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
 ```
 
 No hace falta activar el entorno virtual: los comandos usan su intérprete directamente. El script crea `.env` a partir de `.env.example`, genera un secreto aleatorio de Django sin mostrarlo y conserva intacto un `.env` que ya exista.
+
+`requirements-dev.txt` incluye las dependencias de ejecución de `requirements.txt` y las de validación del contrato para las pruebas. Un entorno que solo ejecute el servicio puede instalar únicamente `requirements.txt`.
 
 No ejecutar `migrate` ni `makemigrations`: este proyecto no usa persistencia. El comando local `runserver` conserva las comprobaciones de Django y omite exclusivamente la revisión de migraciones. `DATABASES = {}` deja el backend dummy de Django, sin conexión a SQLite u otra BD.
 
@@ -63,10 +65,14 @@ config/settings/environment.py   Parseo de booleanos, listas y secreto obligator
 config/urls.py                   Prefijo /api/v1/ reservado para la API
 config/wsgi.py                   Entrada WSGI; producción por defecto
 config/asgi.py                   Entrada ASGI; producción por defecto
-api/urls.py                      Rutas vacías hasta TK03
-api/views.py                     Vistas reservadas para TK03
+api/urls.py                      Rutas health y clima
+api/views.py                     Health y validación previa a la futura integración
+api/validation.py                Formulario y consulta normalizada sin persistencia
+api/responses.py                 JSON uniforme y control de método GET
+api/contracts/                   JSON Schema v1 y ejemplos ficticios versionados
 api/management/commands/         runserver sin comprobación de migraciones
 api/tests.py                     Pruebas de configuración sin base de datos
+api/test_contract.py             Pruebas de entradas, HTTP y esquema JSON
 scripts/create_local_env.py      Preparación segura del .env local
 ```
 
@@ -95,18 +101,36 @@ Para comprobar el entorno de producción se deben preparar sus variables y ejecu
 .venv\Scripts\python.exe -m pip check
 ```
 
-Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a proveedores. Los casos de producción se ejecutan en procesos aislados con valores ficticios de prueba; no modifican el `.env` real ni necesitan API keys.
+Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a proveedores. Los casos de producción se ejecutan en procesos aislados con valores ficticios de prueba; no modifican el `.env` real ni necesitan API keys. Las pruebas de contrato requieren `requirements-dev.txt` y verifican sus ejemplos con jsonschema 4.26.0.
 
-## Contrato propuesto para acordar en TK03
+## Contrato JSON v1
 
-Esta sección conserva la propuesta de los documentos recibidos. No describe una API implementada ni un contrato probado.
+El [JSON Schema v1](api/contracts/response-v1.schema.json) fija los nombres, tipos y estados de las respuestas de salud, clima y error. Los endpoints actuales implementan salud, validación y métodos. Los bloques meteorológicos y los errores de proveedores se usarán al integrar las tareas siguientes.
 
-| Método y ruta | Comportamiento previsto |
+| Método y ruta | Comportamiento actual |
 | --- | --- |
-| `GET /api/v1/health/` | Salud de la aplicación sin consultar proveedores ni base de datos. |
-| `GET /api/v1/clima/?ciudad=Cordoba&pais=AR` | Ciudad obligatoria, `pais` y `region` opcionales. |
+| `GET /api/v1/health/` | HTTP 200 con `{"estado":"ok"}` y `Cache-Control: no-store`. No consulta proveedores ni BD. |
+| `GET /api/v1/clima/?ciudad=Cordoba&pais=AR` | Valida ciudad, país y región. HTTP 400 si son inválidos; HTTP 503 si son válidos mientras no exista la integración. |
 
-| Bloque de éxito | Campos propuestos |
+Las rutas se consumen con la barra final. El health es una prueba de vida de Django, no de disponibilidad de OpenWeather/Groq ni de validez de sus credenciales.
+
+### Parámetros de clima
+
+| Parámetro | Reglas |
+| --- | --- |
+| `ciudad` | Obligatoria, entre 1 y 100 caracteres después de normalizar espacios y Unicode NFC. Admite acentos y nombres compuestos. |
+| `pais` | Opcional. Código de dos letras ASCII, por ejemplo AR, ES o ST. Se convierte a mayúsculas; se valida su formato, no su pertenencia al catálogo de países. Un nombre como Argentina es inválido. |
+| `region` | Opcional, hasta 100 caracteres después de normalizar. Permite precisar coincidencias dentro de un país. |
+
+Se recortan espacios exteriores y se colapsan los interiores, incluidos tabulaciones y saltos de línea. Se rechazan caracteres de control o invisibles restantes. País/región vacíos se tratan como no especificados. No se modifica la entrada original de la solicitud.
+
+Cada parámetro se envía una sola vez. Los nombres desconocidos y los parámetros duplicados producen 400 en lugar de elegir silenciosamente un valor. Los valores deben codificarse por separado, por ejemplo con `HttpParams` o `URLSearchParams`; acentos, `&`, `+`, `#` y otros caracteres reservados se conservan como datos al decodificar.
+
+Ejemplo codificado: `/api/v1/clima/?ciudad=C%C3%B3rdoba&pais=ar&region=C%C3%B3rdoba`. La consulta interna normalizada será ciudad Córdoba, país AR y región Córdoba.
+
+### Esquema de clima
+
+| Bloque de éxito | Campos del contrato |
 | --- | --- |
 | `ubicacion` | `nombre`, `pais`, `region`, `latitud`, `longitud`, `desplazamiento_horario_segundos`. |
 | `actual` | `fecha_utc`, `temperatura_c`, `sensacion_c`, `humedad_pct`, `viento_kmh`, `descripcion`. |
@@ -114,9 +138,15 @@ Esta sección conserva la propuesta de los documentos recibidos. No describe una
 | `recomendacion` | `estado` y `texto`, con `null` cuando no esté disponible. |
 | `meta` | `fuente_meteorologica`, `consultado_en_utc` y unidades explícitas. |
 
-Las fechas se proponen como ISO 8601 UTC; Angular presentará la hora de la ciudad. Se conservarán temperatura cero o negativa y viento cero. Los campos opcionales ausentes serán `null`; los intervalos no se presentarán como promedios diarios sin un cálculo acordado.
+Las fechas serán ISO 8601 UTC con sufijo `Z`. Angular presentará la hora de la ciudad usando `desplazamiento_horario_segundos`. Las unidades serán °C, km/h y %. Los cinco bloques de clima son obligatorios y no se admiten campos extra en el esquema v1.
 
-| HTTP | Código propuesto | Situación |
+La temperatura y la fecha del clima actual son obligatorias. Sensación térmica, humedad, viento y descripción podrán ser `null` si faltan; humedad se expresa entre 0 y 100 y viento como número no negativo. Cero y temperaturas negativas siguen siendo datos válidos. La región resuelta podrá ser `null` si no existe.
+
+Un pronóstico `disponible` tendrá al menos un intervalo. Si está `no_disponible`, tendrá `intervalos: []`. Una recomendación `disponible` tendrá texto no vacío; si está `no_disponible`, tendrá `texto: null`. Los intervalos no se presentan como promedios diarios. Su orden y la correspondencia con la ubicación se comprobarán al integrar los proveedores.
+
+### Errores y métodos
+
+| HTTP | Código | Situación |
 | --- | --- | --- |
 | 400 | `ENTRADA_INVALIDA` | Parámetros inválidos; sin llamadas externas. |
 | 404 | `CIUDAD_NO_ENCONTRADA` | Sin coincidencias geográficas. |
@@ -125,9 +155,39 @@ Las fechas se proponen como ISO 8601 UTC; Angular presentará la hora de la ciud
 | 429 | `LIMITE_ALCANZADO` | Límite que impide obtener el clima. |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Geocodificación o clima temporalmente no disponibles. |
 
-Los errores tendrán `codigo` y `mensaje`. La estructura final de candidatos, validaciones y ejemplos JSON se fijará en backend TK03. No se propagarán credenciales, cuerpos internos ni trazas de proveedores.
+Los errores tendrán `codigo` y `mensaje`. El 400 incluirá `errores` con listas de mensajes por `ciudad`, `pais`, `region` o `consulta`. El futuro 409 incluirá al menos dos `candidatos`, cada uno con nombre, país, región nullable, latitud y longitud. No se reflejan valores privados ni cuerpos internos de proveedores.
+
+POST, PUT, PATCH, DELETE, TRACE, HEAD y OPTIONS directo no están admitidos y devuelven 405 con `Allow: GET`. El cuerpo es JSON, excepto HEAD, que no lleva cuerpo según su semántica HTTP. Un preflight CORS OPTIONS autorizado lo resuelve el middleware con 200 antes de la vista; no es una consulta meteorológica.
+
+```json
+{
+  "codigo": "ENTRADA_INVALIDA",
+  "mensaje": "Revisá los parámetros de la consulta.",
+  "errores": {
+    "ciudad": ["La ciudad es obligatoria y no puede contener solo espacios."]
+  }
+}
+```
 
 Con clima actual válido y falla de Groq se propone HTTP 200 con `recomendacion.estado = no_disponible` y `texto = null`. Si falla solo el pronóstico, se mantendrá el clima y se informará ese bloque como no disponible. Si no hay clima actual válido, no se pedirá a Groq un consejo meteorológico.
+
+### Ejemplos para preparar Angular
+
+- [Salud](api/contracts/examples/health.json)
+- [Éxito de clima](api/contracts/examples/success.json)
+- [Clima con recomendación no disponible](api/contracts/examples/partial.json)
+- [Entrada inválida](api/contracts/examples/invalid.json)
+- [Ciudad ambigua](api/contracts/examples/ambiguous.json)
+
+Todos los ejemplos de clima, fechas, coordenadas y mensajes son fixtures ficticios para probar la estructura JSON. No son observaciones meteorológicas ni resultados reales de OpenWeather/Groq. El endpoint de TK03 no devuelve los ejemplos de éxito como si fueran datos reales.
+
+Para probar la salud local desde PowerShell:
+
+```powershell
+Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/health/'
+```
+
+Consultar clima sin `ciudad` permite comprobar el 400. Consultar `http://127.0.0.1:8000/api/v1/clima/?ciudad=Cordoba&pais=AR` permite comprobar el 503 transitorio de esta etapa. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
 
 ## Coordinación con el frontend
 
@@ -141,6 +201,8 @@ Con clima actual válido y falla de Groq se propone HTTP 200 con `recomendacion.
 
 Frontend TK05 permanece pendiente mientras avanzamos con el backend. Su modelo de demo no se debe asumir como contrato de Django. La región opcional del contrato del backend deberá coordinarse con Angular para resolver ambigüedades que persistan al indicar país.
 
+Al iniciar frontend TK05 se adaptará el formulario para enviar códigos de país de dos letras; la demo de frontend TK04 aún admite nombres como Argentina. Esa diferencia está identificada y no se modificó Angular en backend TK03. Las opciones de país y región usarán el esquema de candidatos acordado aquí.
+
 ## Planificación del backend
 
 Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las diez tareas siguientes. Estados del Kanban: **Pendiente**, **En curso** y **Terminado**. Las fechas no están definidas; P1–P10 expresa secuencia, no días ni duraciones. Responsable propuesto en los archivos: Nahuel Argandoña.
@@ -149,7 +211,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | --- | --- | --- | --- | --- | --- |
 | TK01 | Definir documentación y organización del backend | Ninguna | S | CP15 | En curso: documentación local lista, tablero a cargo del usuario. |
 | TK02 | Configurar Django sin base de datos | TK01 | S | CP01, CP12, CP13 | Implementación local verificada; evidencia al final del README. |
-| TK03 | Definir contrato JSON y validar las entradas | TK02 | S | CP02, CP03, CP11 | Pendiente |
+| TK03 | Definir contrato JSON y validar las entradas | TK02 | S | CP02, CP03, CP11 | Implementación local verificada; evidencia al final del README. |
 | TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Pendiente |
 | TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Pendiente |
 | TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Pendiente |
@@ -181,7 +243,7 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 ## Decisiones pendientes
 
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
-- Contrato definitivo, formato de país/región, validaciones y candidatos de ciudad: TK03.
+- Integrar el contrato v1 de TK03 con la resolución de ciudades en TK04 y la composición de respuesta en TK07; adaptar el formulario y tipos al iniciar frontend TK05.
 - Producto meteorológico disponible en OpenWeather: antes de integrar clima y pronóstico.
 - Modelo habilitado en Groq, tiempos de espera, reintentos y límites: antes de la integración y publicación.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
@@ -207,3 +269,15 @@ CP01–CP14 no ejecutados. No se creó Django, entorno virtual, base de datos, m
 - `pip check` sin dependencias incompatibles. No se instalaron clientes de OpenWeather/Groq ni servidor de producción.
 
 La ruta usada para comprobar CORS aún no está implementada: el test client con DEBUG false recibió 404 y el servidor local con DEBUG true mostró la bienvenida de Django con 200. No se implementó health, clima ni el contrato de TK03. No se ejecutaron migraciones, no se modificó el frontend y no se generó commit, PR ni despliegue.
+
+## Evidencia local de TK03
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18 y dependencias de prueba de `requirements-dev.txt`. Esta sección refleja el estado posterior a TK02.
+
+- CP02: entrada ausente, vacía, con espacios, demasiado larga, país de formato incorrecto, caracteres invisibles, parámetros repetidos o desconocidos devuelven 400 con errores por campo. Se verificaron acentos, codificación de caracteres reservados, normalización y país/región opcionales.
+- CP03: health devuelve 200 sin API keys, red ni BD; métodos no admitidos devuelven 405 y `Allow: GET`. Se conserva el preflight CORS autorizado con 200.
+- CP11, alcance de TK03: esquema válido, cinco ejemplos conformes, valores cero/negativos y ausencias permitidas. Se rechazan unidades incorrectas, fechas no UTC o inválidas y estados parciales contradictorios. Los payloads de clima son ejemplos de contrato, no respuestas reales integradas; esa parte de CP11 continúa en TK07–TK08.
+- 36 pruebas aprobadas sin base de datos de pruebas. En los tests HTTP de TK03 se bloquearon conexiones de red y BD para detectar cualquier acceso accidental.
+- `manage.py check` y `pip check` sin incidencias. HTTP real comprobado en localhost: health 200, entradas inválidas 400, consulta válida 503 y POST 405, todos con JSON y CORS para Angular local.
+
+No se consultó OpenWeather/Groq, no se creó SQLite, no se ejecutaron migraciones ni se modificó el frontend. No se generó commit, PR ni despliegue.

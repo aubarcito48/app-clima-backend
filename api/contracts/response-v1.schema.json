@@ -1,0 +1,456 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Respuestas de App Clima API v1",
+  "description": "Contrato de health, clima y errores. Los ejemplos de clima son ficticios; TK03 no consulta proveedores.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/salud"
+    },
+    {
+      "$ref": "#/$defs/clima"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "fechaUtc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "salud": {
+      "type": "object",
+      "properties": {
+        "estado": {
+          "const": "ok"
+        }
+      },
+      "required": [
+        "estado"
+      ],
+      "additionalProperties": false
+    },
+    "candidato": {
+      "type": "object",
+      "properties": {
+        "nombre": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 100
+        },
+        "pais": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latitud": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitud": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        }
+      },
+      "required": [
+        "nombre",
+        "pais",
+        "region",
+        "latitud",
+        "longitud"
+      ],
+      "additionalProperties": false
+    },
+    "ubicacion": {
+      "type": "object",
+      "properties": {
+        "nombre": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 100
+        },
+        "pais": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latitud": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitud": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "desplazamiento_horario_segundos": {
+          "type": "integer",
+          "minimum": -50400,
+          "maximum": 50400
+        }
+      },
+      "required": [
+        "nombre",
+        "pais",
+        "region",
+        "latitud",
+        "longitud",
+        "desplazamiento_horario_segundos"
+      ],
+      "additionalProperties": false
+    },
+    "actual": {
+      "type": "object",
+      "properties": {
+        "fecha_utc": {
+          "$ref": "#/$defs/fechaUtc"
+        },
+        "temperatura_c": {
+          "type": "number"
+        },
+        "sensacion_c": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "humedad_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "viento_kmh": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "descripcion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "fecha_utc",
+        "temperatura_c",
+        "sensacion_c",
+        "humedad_pct",
+        "viento_kmh",
+        "descripcion"
+      ],
+      "additionalProperties": false
+    },
+    "intervalo": {
+      "type": "object",
+      "properties": {
+        "fecha_utc": {
+          "$ref": "#/$defs/fechaUtc"
+        },
+        "temperatura_c": {
+          "type": "number"
+        },
+        "descripcion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "fecha_utc",
+        "temperatura_c",
+        "descripcion"
+      ],
+      "additionalProperties": false
+    },
+    "pronostico": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "estado": {
+              "const": "disponible"
+            },
+            "intervalos": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/intervalo"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "estado",
+            "intervalos"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "estado": {
+              "const": "no_disponible"
+            },
+            "intervalos": {
+              "type": "array",
+              "maxItems": 0
+            }
+          },
+          "required": [
+            "estado",
+            "intervalos"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "recomendacion": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "estado": {
+              "const": "disponible"
+            },
+            "texto": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          },
+          "required": [
+            "estado",
+            "texto"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "estado": {
+              "const": "no_disponible"
+            },
+            "texto": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "estado",
+            "texto"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "fuente_meteorologica": {
+          "const": "OpenWeather"
+        },
+        "consultado_en_utc": {
+          "$ref": "#/$defs/fechaUtc"
+        },
+        "unidades": {
+          "type": "object",
+          "properties": {
+            "temperatura": {
+              "const": "°C"
+            },
+            "viento": {
+              "const": "km/h"
+            },
+            "humedad": {
+              "const": "%"
+            },
+            "fecha": {
+              "const": "UTC"
+            }
+          },
+          "required": [
+            "temperatura",
+            "viento",
+            "humedad",
+            "fecha"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "fuente_meteorologica",
+        "consultado_en_utc",
+        "unidades"
+      ],
+      "additionalProperties": false
+    },
+    "clima": {
+      "type": "object",
+      "properties": {
+        "ubicacion": {
+          "$ref": "#/$defs/ubicacion"
+        },
+        "actual": {
+          "$ref": "#/$defs/actual"
+        },
+        "pronostico": {
+          "$ref": "#/$defs/pronostico"
+        },
+        "recomendacion": {
+          "$ref": "#/$defs/recomendacion"
+        },
+        "meta": {
+          "$ref": "#/$defs/meta"
+        }
+      },
+      "required": [
+        "ubicacion",
+        "actual",
+        "pronostico",
+        "recomendacion",
+        "meta"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "codigo": {
+          "enum": [
+            "ENTRADA_INVALIDA",
+            "CIUDAD_NO_ENCONTRADA",
+            "CIUDAD_AMBIGUA",
+            "METODO_NO_PERMITIDO",
+            "LIMITE_ALCANZADO",
+            "SERVICIO_NO_DISPONIBLE"
+          ]
+        },
+        "mensaje": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "errores": {
+          "type": "object",
+          "properties": {
+            "ciudad": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "pais": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "region": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "consulta": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          "minProperties": 1,
+          "additionalProperties": false
+        },
+        "candidatos": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/candidato"
+          }
+        }
+      },
+      "required": [
+        "codigo",
+        "mensaje"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "codigo": {
+                "const": "CIUDAD_AMBIGUA"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "candidatos"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "candidatos"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "codigo": {
+                "const": "ENTRADA_INVALIDA"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "errores"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "errores"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "codigo": "CIUDAD_AMBIGUA",
+  "mensaje": "Hay varias coincidencias. Precisá el país o la región.",
+  "candidatos": [
+    {
+      "nombre": "Córdoba",
+      "pais": "AR",
+      "region": "Córdoba",
+      "latitud": -31.42,
+      "longitud": -64.18
+    },
+    {
+      "nombre": "Córdoba",
+      "pais": "ES",
+      "region": "Andalucía",
+      "latitud": 37.88,
+      "longitud": -4.78
+    }
+  ]
+}

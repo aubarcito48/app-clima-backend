@@ -1,3 +1,11 @@
-"""Los endpoints y su contrato se implementarán en TK03."""
+"""Rutas públicas del contrato v1."""
 
-urlpatterns = []
+from django.urls import path
+
+from . import views
+
+app_name = "api"
+urlpatterns = [
+    path("health/", views.health, name="health"),
+    path("clima/", views.climate, name="climate"),
+]

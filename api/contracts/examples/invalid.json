@@ -1,0 +1,9 @@
+{
+  "codigo": "ENTRADA_INVALIDA",
+  "mensaje": "Revisá los parámetros de la consulta.",
+  "errores": {
+    "ciudad": [
+      "La ciudad es obligatoria y no puede contener solo espacios."
+    ]
+  }
+}
