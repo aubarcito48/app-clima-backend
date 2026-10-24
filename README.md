@@ -6,7 +6,7 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK07: endpoint de clima inteligente integrado.** La API compone ubicación, clima actual, pronóstico, recomendación y metadatos según el contrato v1. Django opera sin base de datos y el usuario administra el tablero Kanban.
+**TK08: pruebas del backend y del contrato verificadas.** La suite aislada aprueba 134 pruebas sin leer el `.env` privado ni permitir conexiones externas o a BD. El endpoint integrado en TK07 conserva su contrato y comportamiento. El usuario administra el tablero Kanban.
 
 `GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida, resuelve la ubicación y consulta los servicios. Con clima actual válido responde 200, incluso si el pronóstico o la IA no están disponibles. Devuelve 400 para entrada inválida, 404 sin coincidencias, 409 con candidatos ante ambigüedad y 429/503 cuando no puede obtener ubicación o clima actual. La verificación local usa proveedores simulados; no acredita acceso a cuentas reales.
 
@@ -84,7 +84,9 @@ api/test_geocoding.py            Pruebas de transporte, geocodificación y error
 api/test_weather.py              Pruebas de unidades, fechas y fallas meteorológicas parciales
 api/test_recommendations.py      Pruebas del SDK con transporte HTTP en memoria
 api/test_climate.py              Integración del endpoint con proveedores simulados
+api/test_regression.py           Recorrido HTTP completo con transportes simulados
 scripts/create_local_env.py      Preparación segura del .env local
+scripts/test_backend.py          Suite aislada de credenciales, red y BD
 ```
 
 `manage.py` usa `config.settings.development` por defecto. WSGI/ASGI usan `config.settings.production` salvo que se establezca explícitamente `DJANGO_SETTINGS_MODULE`. La instalación del servidor de producción y los comandos de Render quedan para TK10.
@@ -115,11 +117,16 @@ Para comprobar el entorno de producción se deben preparar sus variables y ejecu
 ## Pruebas locales
 
 ```powershell
-.venv\Scripts\python.exe manage.py test --verbosity 2
+.venv\Scripts\python.exe scripts/test_backend.py
+.venv\Scripts\python.exe scripts/test_backend.py --shuffle 24082026 --verbosity 2
 .venv\Scripts\python.exe -m pip check
 ```
 
-Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a proveedores. Los casos de producción se ejecutan en procesos aislados con valores ficticios de prueba; no modifican el `.env` real ni necesitan API keys. Las pruebas de contrato requieren `requirements-dev.txt` y verifican sus ejemplos con jsonschema 4.26.0.
+Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a proveedores. El comando recomendado `scripts/test_backend.py` deshabilita la lectura de dotenv, establece configuración ficticia y claves vacías, y bloquea sockets, SQLite y conexiones de Django antes de inicializar la aplicación. Las pruebas que necesitan proveedores usan claves ficticias y transportes simulados. No hace falta crear `.env` para ejecutar esta suite.
+
+El bloqueo falla ante un intento de conexión no simulado y comprueba al terminar que no se haya utilizado. Los casos de configuración de producción se ejecutan en subprocesos con valores ficticios y dotenv deshabilitado heredado; solo realizan comprobaciones de configuración. El comando no modifica archivos de entorno ni inicia un servidor. `--shuffle` permite repetir un orden alternativo mediante una semilla explícita.
+
+El comando estándar `manage.py test` sigue disponible, pero carga la configuración local de Django; para una ejecución independiente de las credenciales se recomienda el script anterior. Las pruebas de contrato requieren `requirements-dev.txt` y verifican sus ejemplos con jsonschema 4.26.0.
 
 ## Contrato JSON v1
 
@@ -356,7 +363,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Servicios verificados con proveedor simulado; evidencia al final. |
 | TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Servicio verificado con SDK y transporte simulado; evidencia al final. |
 | TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Implementación local verificada con proveedores simulados; evidencia al final. |
-| TK08 | Ejecutar pruebas del backend y del contrato | TK07 | M | CP01–CP11, CP15 | Pendiente |
+| TK08 | Ejecutar pruebas del backend y del contrato | TK07 | M | CP01–CP11, CP15 | Suite aislada y regresión verificadas; evidencia al final. |
 | TK09 | Preparar seguridad y configuración de producción | TK08 | M | CP12, CP13 | Pendiente |
 | TK10 | Publicar Django en Render y validar la integración | TK09 y acceso a las cuentas de los proveedores | M | CP12, CP13, CP14, CP15 | Pendiente |
 
@@ -383,7 +390,7 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 ## Decisiones pendientes
 
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
-- Ampliar la revisión integral en backend TK08; adaptar el formulario y tipos al iniciar frontend TK05 usando el endpoint integrado de TK07.
+- Adaptar el formulario y tipos al iniciar frontend TK05 usando el endpoint integrado y verificado en TK07–TK08.
 - Verificar en la cuenta la disponibilidad de los productos de clima actual y pronóstico de cinco días preparados en TK05 antes de validar con datos reales.
 - Seleccionar en la cuenta un modelo de Groq habilitado y validar sus permisos y compatibilidad con la petición. TK06 ya fija límites de salida, timeouts por operación y cero reintentos; el presupuesto global se revisará en TK09.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
@@ -470,3 +477,28 @@ El `.env` privado y el frontend se conservaron sin cambios. No se realizaron con
 - `manage.py check`, `pip check` y `git diff --check` sin incidencias.
 
 No se verificaron cuentas, cuotas, permisos ni calidad de un modelo real. El frontend y el `.env` privado se conservaron sin cambios. No se creó BD, migración, commit, PR ni despliegue. Backend TK08 queda pendiente para la revisión integral prevista.
+
+## Evidencia local de TK08
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18, groq 1.7.0, HTTPX 0.28.1 y jsonschema 4.26.0. Se revisaron las actividades y criterios de TK08 del MD original sin modificar los documentos de planificación.
+
+| Casos | Cobertura y evidencia reproducible |
+| --- | --- |
+| CP01 | `api/tests.py`: configuración sin modelos, aplicaciones persistentes, migraciones ni BD; comprobaciones de Django y arranque local. |
+| CP02–CP03 | `api/test_contract.py` y `api/test_regression.py`: ciudad requerida, formato de país, región, longitudes, duplicados, parámetros desconocidos y Unicode. Las entradas inválidas no abren transportes de proveedores. |
+| CP04–CP05 | `api/test_geocoding.py`: ausencia, ambigüedad, filtrado y resultados truncados. Regresión completa de 409 y nueva consulta con la región devuelta por un candidato, seguida de clima de sus coordenadas. |
+| CP06–CP07 | `api/test_weather.py`: mediciones, conversión de m/s a km/h, UTC, cero/negativos, nulls, orden e intervalos reales sin promedios inventados. |
+| CP08–CP09 | `api/test_recommendations.py` y `api/test_climate.py`: contexto de la consulta, SDK, límites, fallas y recomendación no disponible conservando el clima con HTTP 200. |
+| CP10 | `api/test_climate.py` y `api/test_regression.py`: las cuatro combinaciones de disponibilidad de pronóstico/IA, JSON incorrecto y fallas HTTP o timeout de geocodificación/clima; se detienen llamadas posteriores cuando falta información obligatoria. |
+| CP11 | `api/test_contract.py`: esquema y once ejemplos. `api/test_regression.py`: validación de respuestas HTTP reales de Django con comprobación de fechas, cinco bloques, errores públicos, unidades y cierre de conexiones simuladas. |
+| CP15 | README actualizado con comando reproducible, trazabilidad, entorno, resultados y límites. Originales DOCX/XLSX/MD conservados; tablero y vinculación al commit a cargo del usuario. |
+
+Resultados:
+
+- `scripts/test_backend.py`: **134 pruebas aprobadas**.
+- `scripts/test_backend.py --shuffle 24082026 --verbosity 2`: **134 pruebas aprobadas** en orden alternativo reproducible; Django informa `Skipping setup of unused database(s): default`.
+- Bloqueos de red y BD activos durante la suite; sin lectura del `.env` ni credenciales reales. Los cinco casos nuevos de regresión sustituyen únicamente el transporte HTTPS de OpenWeather y el transporte HTTP del SDK de Groq, manteniendo validación, servicios, normalización, orquestación, vistas y middleware.
+- Regresión de los dos orígenes locales de Angular, `Cache-Control: no-store` en éxitos y ausencia de credenciales o cuerpos privados en las respuestas verificadas.
+- `manage.py check`, `pip check` y `git diff --check` sin incidencias. Sin defectos bloqueantes en los casos ejecutados; no se necesitaron cambios en el comportamiento del endpoint.
+
+La verificación acredita el comportamiento local con proveedores simulados. CP14 requiere publicación y cuentas reales en TK10; no se verificaron permisos, cuotas ni calidad de un modelo real. TK09 continúa pendiente para la revisión de seguridad y configuración de producción. Frontend, `.env`, dependencias y servidor local sin cambios; sin BD, migraciones, commit, PR ni despliegue.
