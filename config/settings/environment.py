@@ -42,3 +42,13 @@ def env_timeout(name, default):
     if not math.isfinite(value) or not 0 < value <= 30:
         raise ImproperlyConfigured(f"{name} debe ser mayor que 0 y no superar 30 segundos.")
     return value
+
+
+def env_int(name, default, *, minimum, maximum):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        raise ImproperlyConfigured(f"{name} debe ser un entero entre {minimum} y {maximum}.") from None
+    if not minimum <= value <= maximum:
+        raise ImproperlyConfigured(f"{name} debe estar entre {minimum} y {maximum}.")
+    return value

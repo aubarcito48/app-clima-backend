@@ -6,9 +6,9 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK05: servicios de clima actual y pronóstico implementados.** Se mantiene la resolución de ciudades de TK04 y el contrato v1 de TK03. Django opera sin base de datos y el usuario administra el tablero Kanban.
+**TK06: servicio de recomendaciones con Groq implementado.** Se mantienen los servicios meteorológicos de TK05, la geocodificación y el contrato v1. Django opera sin base de datos y el usuario administra el tablero Kanban.
 
-`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida y resuelve la ubicación: devuelve 400 para entrada inválida, 404 sin coincidencias y 409 con candidatos si hay ambigüedad. Una ubicación resuelta sigue terminando en 503 hasta componer la respuesta HTTP completa en TK07. TK05 entrega los servicios meteorológicos probados por separado, sin conectarlos aún a esa vista ni consultar Groq.
+`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida y resuelve la ubicación: devuelve 400 para entrada inválida, 404 sin coincidencias y 409 con candidatos si hay ambigüedad. Una ubicación resuelta sigue terminando en 503 hasta componer la respuesta HTTP completa en TK07. Clima y recomendaciones están probados como servicios separados; la vista pública aún no los llama.
 
 La numeración TK01–TK10 de este repositorio es independiente de la del frontend. En las conversaciones y referencias cruzadas se debe indicar siempre a qué repositorio pertenece cada tarea. Los requisitos e historias del backend usan el prefijo BE.
 
@@ -38,6 +38,8 @@ La configuración y las rutas están separadas de la aplicación `api`. Las vist
 ## Versiones e instalación local
 
 Configuración verificada con Python 3.14.3, Django 5.2.18 LTS, django-cors-headers 4.9.0 y python-dotenv 1.2.4. `requirements.txt` fija también las dependencias transitivas. La [compatibilidad oficial de Django 5.2](https://docs.djangoproject.com/en/5.2/faq/install/) incluye Python 3.14 desde Django 5.2.8.
+
+TK06 añade el SDK oficial groq 1.7.0 y HTTPX 0.28.1, con sus dependencias fijadas. Después de actualizar el repositorio, volver a instalar `requirements-dev.txt` para ejecutar la suite completa.
 
 Desde `app-clima-backend`, en PowerShell:
 
@@ -72,12 +74,14 @@ api/responses.py                 JSON uniforme y control de método GET
 api/services/openweather.py      Transporte HTTPS común con destinos fijos y límites
 api/services/geocoding.py        Resolución de ubicaciones de OpenWeather
 api/services/weather.py          Clima actual, pronóstico y normalización sin HTTP público
+api/services/recommendations.py  Contexto meteorológico y recomendación breve con Groq
 api/contracts/                   JSON Schema v1 y ejemplos ficticios versionados
 api/management/commands/         runserver sin comprobación de migraciones
 api/tests.py                     Pruebas de configuración sin base de datos
 api/test_contract.py             Pruebas de entradas, HTTP y esquema JSON
 api/test_geocoding.py            Pruebas de transporte, geocodificación y errores con mocks
 api/test_weather.py              Pruebas de unidades, fechas y fallas meteorológicas parciales
+api/test_recommendations.py      Pruebas del SDK con transporte HTTP en memoria
 scripts/create_local_env.py      Preparación segura del .env local
 ```
 
@@ -96,7 +100,11 @@ scripts/create_local_env.py      Preparación segura del .env local
 | `OPENWEATHER_API_KEY` | Necesaria para geocodificación y servicios meteorológicos reales. No hace falta para iniciar Django, health o las pruebas. Nunca se envía a Angular. |
 | `OPENWEATHER_CONNECT_TIMEOUT_SECONDS` | Timeout de conexión: 3 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
 | `OPENWEATHER_READ_TIMEOUT_SECONDS` | Timeout de operaciones de socket después de conectar: 5 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
-| `GROQ_API_KEY`, `GROQ_MODEL` | Opcionales y todavía sin uso; se integrarán en TK06. |
+| `GROQ_API_KEY` | Clave privada para el servicio de recomendaciones. Sin clave se devuelve recomendación no disponible, sin intentar red. |
+| `GROQ_MODEL` | Identificador del modelo de chat habilitado en la cuenta. Sin modelo se devuelve recomendación no disponible. No se eligió un modelo por defecto. |
+| `GROQ_CONNECT_TIMEOUT_SECONDS` | Conexión, escritura y espera del pool: 3 segundos por operación por defecto, mayor que 0 y hasta 30. |
+| `GROQ_READ_TIMEOUT_SECONDS` | Lectura del SDK: 8 segundos por operación por defecto, mayor que 0 y hasta 30. |
+| `GROQ_MAX_COMPLETION_TOKENS` | Límite de salida del SDK: 160 por defecto, configurable entre 32 y 512. |
 
 El middleware CORS se aplica a `/api/`, admite GET/OPTIONS y no habilita credenciales de navegador ni comodines. Un origen ajeno no recibe `Access-Control-Allow-Origin`. Esto habilita lectura en el navegador; no autentica la API ni bloquea clientes que no usan CORS. [Configuración de django-cors-headers](https://github.com/adamchainz/django-cors-headers#setup).
 
@@ -255,6 +263,46 @@ El pronóstico conserva los intervalos provistos y sus temperaturas, ordenados p
 
 El servicio está preparado para el posterior HTTP 200 parcial de TK07; TK05 no cambia todavía la vista pública para devolver snapshots incompletos. Las pruebas no necesitan clave real y no hacen llamadas externas. No se modificó el `.env` privado ni se agregaron dependencias.
 
+## Recomendaciones de TK06
+
+`generate_recommendation(snapshot)` recibe el `WeatherSnapshot` normalizado de TK05 y devuelve únicamente el bloque `recomendacion` del contrato v1:
+
+```json
+{"estado":"disponible","texto":"Consejo breve en español basado en el clima recibido."}
+```
+
+Si falta configuración, el clima actual no es válido, falla el proveedor o el texto no cumple los límites:
+
+```json
+{"estado":"no_disponible","texto":null}
+```
+
+Los ejemplos de texto anteriores son ilustrativos. El servicio no crea consejos ficticios como reemplazo de una falla. Tampoco modifica ni elimina el snapshot recibido: la composición de TK07 conservará el clima aunque la IA no esté disponible.
+
+### Contexto e instrucciones
+
+Se envía una lista explícita de datos: nombre, país, región y offset de la ubicación; clima actual; unidades; y hasta los primeros ocho intervalos de pronóstico ordenados por TK05. Se informa cuántos intervalos se incluyeron y cuántos existían, sin completar el resto. Coordenadas, campos desconocidos, credenciales y metadatos privados no se incorporan al prompt.
+
+Las instrucciones son un mensaje de sistema fijo. La ubicación y las descripciones se serializan como JSON en otro mensaje con rol usuario, nunca se concatenan dentro de las instrucciones. Se pide un consejo en español, de hasta tres frases y 80 palabras, usando solo los datos entregados, respetando los `null` y sin inventar pronósticos. Si no hay pronóstico, el consejo debe limitarse al clima actual.
+
+El contexto se limita a 12.000 caracteres. Se requiere clima actual válido y no se llama a Groq para completar mediciones faltantes. La separación de mensajes reduce el riesgo de instrucciones dentro de los datos; no garantiza por sí sola la exactitud ni el cumplimiento de un modelo real. Las pruebas verifican estructura y contexto, no la calidad semántica de una respuesta real.
+
+### SDK, tiempos y salida
+
+Se usa el [SDK oficial de Groq para Python](https://github.com/groq/groq-python) con modelo tomado de `.env`, destino fijo `https://api.groq.com`, TLS verificado y sin proxies/base URL del entorno ni redirecciones. Se solicitan una única respuesta, sin streaming y sin uso de herramientas.
+
+Los reintentos del SDK se fijan explícitamente en cero. Los timeouts de conexión, lectura, escritura y pool se establecen con HTTPX; son límites por operación, no un plazo total absoluto. El presupuesto global de solicitud se revisará en TK09. La clave se utiliza solo en la cabecera de autorización del servidor y no forma parte del contexto ni de la respuesta pública.
+
+La respuesta debe contener una única elección completa con `finish_reason=stop`, texto no vacío, hasta 600 caracteres y 80 palabras. Se rechazan truncamientos, respuestas de herramientas, estructuras incorrectas y caracteres de control/invisibles. El texto se devuelve como string JSON, sin ejecutarlo ni interpretarlo como HTML. El frontend deberá seguir renderizándolo como texto.
+
+Timeouts, errores de red, HTTP 401/403/429/5xx, respuestas vacías o inválidas producen el mismo bloque `no_disponible`. No se exponen excepciones, cuerpos del proveedor ni prompts. Los loggers verbosos de Groq/HTTPX/HTTPCore no propagan sus registros; se conservan los logs de Django. Los clientes HTTP se cierran tanto en éxito como en error.
+
+### Configuración real pendiente
+
+Para usar el servicio con una cuenta real, completar `GROQ_API_KEY` y `GROQ_MODEL` en el `.env` privado del backend con un modelo de chat habilitado que admita los parámetros enviados. No colocar esas variables en Angular. La [guía de inicio de Groq](https://console.groq.com/docs/quickstart) explica la configuración de la cuenta.
+
+No se seleccionó un modelo ni se modificó tu `.env` real. La verificación usa el SDK instalado con `httpx.MockTransport`: ninguna llamada sale a Groq ni consume saldo. La integración HTTP pública continúa en TK07.
+
 ## Coordinación con el frontend
 
 | Etapa | Dependencia y entrega |
@@ -280,7 +328,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | TK03 | Definir contrato JSON y validar las entradas | TK02 | S | CP02, CP03, CP11 | Implementación local verificada; evidencia al final del README. |
 | TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Implementación local verificada con proveedor simulado; evidencia al final. |
 | TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Servicios verificados con proveedor simulado; evidencia al final. |
-| TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Pendiente |
+| TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Servicio verificado con SDK y transporte simulado; evidencia al final. |
 | TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Pendiente |
 | TK08 | Ejecutar pruebas del backend y del contrato | TK07 | M | CP01–CP11, CP15 | Pendiente |
 | TK09 | Preparar seguridad y configuración de producción | TK08 | M | CP12, CP13 | Pendiente |
@@ -311,7 +359,7 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
 - Componer la respuesta completa en TK07 usando la ubicación de TK04 y los servicios meteorológicos de TK05; adaptar el formulario y tipos al iniciar frontend TK05.
 - Verificar en la cuenta la disponibilidad de los productos de clima actual y pronóstico de cinco días preparados en TK05 antes de validar con datos reales.
-- Modelo habilitado en Groq, tiempos de espera, reintentos y límites: antes de la integración y publicación.
+- Seleccionar en la cuenta un modelo de Groq habilitado y validar sus permisos y compatibilidad con la petición. TK06 ya fija límites de salida, timeouts por operación y cero reintentos; el presupuesto global se revisará en TK09.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
 - MCP queda como evolución posible; no es una dependencia de esta primera implementación.
 
@@ -371,3 +419,15 @@ No se probó una cuenta real de OpenWeather, no se consumieron consultas externa
 - `manage.py check` y `pip check` sin incidencias. Se verificaron endpoints fijos, coordenadas de la ubicación resuelta, unidades métricas, idioma español, límites de respuesta y errores saneados.
 
 No se usó una cuenta real de OpenWeather, no se hicieron consultas externas ni se integró Groq. El frontend y el `.env` privado se conservaron sin cambios. No se creó BD, migración, endpoint adicional, commit, PR ni despliegue.
+
+## Evidencia local de TK06
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18, groq 1.7.0 y HTTPX 0.28.1. Dependencias y versiones transitivas fijadas en `requirements.txt`.
+
+- CP08: se capturó la petición real del SDK en transporte simulado. Modelo configurable, roles separados, contexto con mediciones y unidades, ceros y nulls conservados, pronóstico acotado sin promedios y campos privados excluidos.
+- CP09, servicio: timeout, conexión fallida, 401/403/429/5xx, redirecciones, texto vacío, truncado, excesivo o respuesta de herramientas devuelven `no_disponible`/null. Se comprobó una sola petición, sin reintentos, cierre de conexiones y snapshot meteorológico intacto.
+- Comprobada la conformidad del bloque con el JSON Schema v1. Se verificó también el consejo basado solo en clima actual cuando falta pronóstico, y que no haya petición sin clave/modelo o sin clima actual válido.
+- 116 pruebas aprobadas, sin red externa ni base de datos. Verificada la no propagación de clave y prompt en logs incluso habilitando niveles verbosos de los loggers del proveedor durante la prueba.
+- `manage.py check` y `pip check` sin incidencias. No se probaron permisos, cuotas ni calidad de un modelo real; esa validación queda para la integración con las cuentas reales.
+
+El `.env` privado y el frontend se conservaron sin cambios. No se realizaron consultas externas ni se creó BD, migración, endpoint nuevo, commit, PR o despliegue. TK07 compondrá los servicios de ubicación, clima y recomendación en la respuesta HTTP completa.

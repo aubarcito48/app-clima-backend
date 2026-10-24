@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .environment import env_list, env_timeout, required_secret
+from .environment import env_int, env_list, env_timeout, required_secret
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env", override=False)
@@ -48,3 +48,18 @@ OPENWEATHER_CONNECT_TIMEOUT_SECONDS = env_timeout("OPENWEATHER_CONNECT_TIMEOUT_S
 OPENWEATHER_READ_TIMEOUT_SECONDS = env_timeout("OPENWEATHER_READ_TIMEOUT_SECONDS", 5)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "")
+GROQ_CONNECT_TIMEOUT_SECONDS = env_timeout("GROQ_CONNECT_TIMEOUT_SECONDS", 3)
+GROQ_READ_TIMEOUT_SECONDS = env_timeout("GROQ_READ_TIMEOUT_SECONDS", 8)
+GROQ_MAX_COMPLETION_TOKENS = env_int("GROQ_MAX_COMPLETION_TOKENS", 160, minimum=32, maximum=512)
+
+# Evitar que el logging verbose del SDK/transporte propague prompts o cabeceras.
+# Los logs operativos de Django se mantienen; no se registran cuerpos de Groq.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"provider_silent": {"class": "logging.NullHandler"}},
+    "loggers": {
+        name: {"handlers": ["provider_silent"], "level": "WARNING", "propagate": False}
+        for name in ("groq", "httpx", "httpcore")
+    },
+}
