@@ -2,6 +2,7 @@
 
 from .responses import error_response, get_only, json_response
 from .validation import ClimateQueryForm
+from .services.geocoding import AmbiguousLocation, GeocodingFailure, resolve_location
 
 
 @get_only
@@ -23,8 +24,19 @@ def climate(request):
             errors=form.public_errors(),
         )
 
-    # TK03 solo valida el contrato de entrada. No inventa clima ni llama a APIs.
-    # TK04–TK07 usarán form.query() para resolver y componer la respuesta real.
+    try:
+        # La ubicación resuelta se usará para consultar el clima en TK05–TK07.
+        resolve_location(form.query())
+    except GeocodingFailure as failure:
+        candidates = (
+            [location.as_candidate() for location in failure.candidates]
+            if isinstance(failure, AmbiguousLocation) else None
+        )
+        return error_response(
+            failure.code, failure.message, status=failure.status, candidates=candidates
+        )
+
+    # Resolver una ubicación todavía no entrega clima ni recomendaciones.
     return error_response(
         "SERVICIO_NO_DISPONIBLE",
         "El servicio de clima todavía no está disponible. Intentá más tarde.",

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .environment import env_list, required_secret
+from .environment import env_list, env_timeout, required_secret
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env", override=False)
@@ -44,5 +44,7 @@ CORS_URLS_REGEX = r"^/api(?:/|$)"
 
 # Vacíos hasta integrar los proveedores. Nunca se entregan al frontend.
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
+OPENWEATHER_CONNECT_TIMEOUT_SECONDS = env_timeout("OPENWEATHER_CONNECT_TIMEOUT_SECONDS", 3)
+OPENWEATHER_READ_TIMEOUT_SECONDS = env_timeout("OPENWEATHER_READ_TIMEOUT_SECONDS", 5)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "")

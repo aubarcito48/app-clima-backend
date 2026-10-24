@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from .responses import json_response
 from .validation import ClimateQuery, ClimateQueryForm
+from .services.geocoding import GeoLocation
 
 
 CONTRACTS = Path(__file__).with_name("contracts")
@@ -32,6 +33,12 @@ def valid_datetime(value):
 @override_settings(ALLOWED_HOSTS=["testserver"])
 class ApiEntryTests(SimpleTestCase):
     def setUp(self):
+        resolver = patch(
+            "api.views.resolve_location",
+            return_value=GeoLocation("Córdoba", "AR", "Córdoba", -31.42, -64.18),
+        )
+        self.resolver = resolver.start()
+        self.addCleanup(resolver.stop)
         # Si un endpoint intenta acceder a red o BD, la prueba falla.
         for target in (
             "socket.create_connection", "socket.socket.connect",
@@ -58,6 +65,7 @@ class ApiEntryTests(SimpleTestCase):
         response = self.client.get("/api/v1/health/")
         self.assertEqual(self.assert_contract(response, 200), {"estado": "ok"})
         self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.resolver.assert_not_called()
 
     def test_missing_or_blank_city_is_a_structured_400(self):
         for city in [None, "", "   ", "\t\n", "\u00a0\u2003"]:
@@ -67,6 +75,7 @@ class ApiEntryTests(SimpleTestCase):
                     self.client.get("/api/v1/clima/", params), 400, "ENTRADA_INVALIDA"
                 )
                 self.assertIn("ciudad", payload["errores"])
+        self.resolver.assert_not_called()
 
     def test_lengths_are_checked_after_normalizing_spaces(self):
         for field in ["ciudad", "region"]:

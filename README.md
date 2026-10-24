@@ -6,9 +6,9 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK03: contrato v1, validación de entradas y health implementados.** Django opera sin base de datos, con configuración local/producción, credenciales por entorno y CORS explícito para Angular local. El usuario administra el tablero Kanban.
+**TK04: resolución de ciudades con OpenWeather implementada.** Se mantiene el contrato v1, la validación y el health de TK03. Django opera sin base de datos y el usuario administra el tablero Kanban.
 
-`GET /api/v1/health/` responde 200 con `{"estado":"ok"}`. `GET /api/v1/clima/` valida los parámetros: una entrada inválida devuelve 400 y una válida devuelve por ahora 503, porque la integración con los proveedores empieza en las tareas siguientes. No se devuelve clima inventado ni se consulta OpenWeather/Groq.
+`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida y resuelve la ubicación: devuelve 400 para entrada inválida, 404 sin coincidencias y 409 con candidatos si hay ambigüedad. Una ubicación resuelta sigue terminando en 503, porque aún faltan clima y recomendación. No se devuelve clima inventado ni se consulta Groq.
 
 La numeración TK01–TK10 de este repositorio es independiente de la del frontend. En las conversaciones y referencias cruzadas se debe indicar siempre a qué repositorio pertenece cada tarea. Los requisitos e historias del backend usan el prefijo BE.
 
@@ -69,10 +69,12 @@ api/urls.py                      Rutas health y clima
 api/views.py                     Health y validación previa a la futura integración
 api/validation.py                Formulario y consulta normalizada sin persistencia
 api/responses.py                 JSON uniforme y control de método GET
+api/services/geocoding.py        Cliente HTTPS y resolución de ubicaciones de OpenWeather
 api/contracts/                   JSON Schema v1 y ejemplos ficticios versionados
 api/management/commands/         runserver sin comprobación de migraciones
 api/tests.py                     Pruebas de configuración sin base de datos
 api/test_contract.py             Pruebas de entradas, HTTP y esquema JSON
+api/test_geocoding.py            Pruebas de transporte, geocodificación y errores con mocks
 scripts/create_local_env.py      Preparación segura del .env local
 ```
 
@@ -88,7 +90,10 @@ scripts/create_local_env.py      Preparación segura del .env local
 | `DJANGO_DEBUG` | Booleano explícito. Local admite true/false; producción rechaza true. |
 | `DJANGO_ALLOWED_HOSTS` | Hosts separados por comas. Local: localhost, 127.0.0.1 y [::1]. Producción exige hosts explícitos sin `*`. |
 | `CORS_ALLOWED_ORIGINS` | Orígenes separados por comas. Local: http://localhost:4200 y http://127.0.0.1:4200. |
-| `OPENWEATHER_API_KEY`, `GROQ_API_KEY`, `GROQ_MODEL` | Vacíos y opcionales hasta integrar los proveedores. Nunca se envían a Angular. |
+| `OPENWEATHER_API_KEY` | Necesaria para consultar geocodificación real desde TK04. No hace falta para iniciar Django, health o las pruebas. Nunca se envía a Angular. |
+| `OPENWEATHER_CONNECT_TIMEOUT_SECONDS` | Timeout de conexión: 3 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
+| `OPENWEATHER_READ_TIMEOUT_SECONDS` | Timeout de operaciones de socket después de conectar: 5 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Opcionales y todavía sin uso; se integrarán en TK06. |
 
 El middleware CORS se aplica a `/api/`, admite GET/OPTIONS y no habilita credenciales de navegador ni comodines. Un origen ajeno no recibe `Access-Control-Allow-Origin`. Esto habilita lectura en el navegador; no autentica la API ni bloquea clientes que no usan CORS. [Configuración de django-cors-headers](https://github.com/adamchainz/django-cors-headers#setup).
 
@@ -110,7 +115,7 @@ El [JSON Schema v1](api/contracts/response-v1.schema.json) fija los nombres, tip
 | Método y ruta | Comportamiento actual |
 | --- | --- |
 | `GET /api/v1/health/` | HTTP 200 con `{"estado":"ok"}` y `Cache-Control: no-store`. No consulta proveedores ni BD. |
-| `GET /api/v1/clima/?ciudad=Cordoba&pais=AR` | Valida ciudad, país y región. HTTP 400 si son inválidos; HTTP 503 si son válidos mientras no exista la integración. |
+| `GET /api/v1/clima/?ciudad=Cordoba&pais=AR` | Valida y resuelve la ubicación; puede devolver 400/404/409/429/503. Una ubicación resuelta termina por ahora en 503 hasta integrar clima y recomendación. |
 
 Las rutas se consumen con la barra final. El health es una prueba de vida de Django, no de disponibilidad de OpenWeather/Groq ni de validez de sus credenciales.
 
@@ -155,7 +160,7 @@ Un pronóstico `disponible` tendrá al menos un intervalo. Si está `no_disponib
 | 429 | `LIMITE_ALCANZADO` | Límite que impide obtener el clima. |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Geocodificación o clima temporalmente no disponibles. |
 
-Los errores tendrán `codigo` y `mensaje`. El 400 incluirá `errores` con listas de mensajes por `ciudad`, `pais`, `region` o `consulta`. El futuro 409 incluirá al menos dos `candidatos`, cada uno con nombre, país, región nullable, latitud y longitud. No se reflejan valores privados ni cuerpos internos de proveedores.
+Los errores tendrán `codigo` y `mensaje`. El 400 incluirá `errores` con listas de mensajes por `ciudad`, `pais`, `region` o `consulta`. El 409 incluye al menos dos `candidatos`, cada uno con nombre, país, región nullable, latitud y longitud. No se reflejan valores privados ni cuerpos internos de proveedores.
 
 POST, PUT, PATCH, DELETE, TRACE, HEAD y OPTIONS directo no están admitidos y devuelven 405 con `Allow: GET`. El cuerpo es JSON, excepto HEAD, que no lleva cuerpo según su semántica HTTP. Un preflight CORS OPTIONS autorizado lo resuelve el middleware con 200 antes de la vista; no es una consulta meteorológica.
 
@@ -187,7 +192,34 @@ Para probar la salud local desde PowerShell:
 Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/health/'
 ```
 
-Consultar clima sin `ciudad` permite comprobar el 400. Consultar `http://127.0.0.1:8000/api/v1/clima/?ciudad=Cordoba&pais=AR` permite comprobar el 503 transitorio de esta etapa. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
+Consultar clima sin `ciudad` permite comprobar el 400. Consultar `http://127.0.0.1:8000/api/v1/clima/?ciudad=Cordoba&pais=AR` ejecuta geocodificación si hay clave configurada y termina en el estado correspondiente; aun resolviendo una ubicación, el clima completo no está disponible todavía. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
+
+## Resolución de ciudades de TK04
+
+El cliente usa exclusivamente HTTPS con host fijo `api.openweathermap.org` y ruta `/geo/1.0/direct`. Envía `q`, `limit=5` y `appid` mediante codificación independiente de parámetros. El usuario nunca define el destino de red. No se siguen redirecciones ni se hacen reintentos automáticos.
+
+La [documentación de geocodificación de OpenWeather](https://openweathermap.org/api/geocoding-api) establece un máximo de cinco resultados y limita el código de estado de `q` a EE. UU. Por eso se envía ciudad y país, y `region` se compara localmente con el campo `state` recibido, sin colocar una región libre en la posición del código estadounidense.
+
+La región se puede copiar de un candidato devuelto por la API. Se ignoran diferencias de mayúsculas, acentos y espacios; no se expanden abreviaturas de estados o provincias. Si el proveedor no informa región, esta queda en `null` y no satisface un filtro de región explícito.
+
+Cada resultado se valida antes de filtrar: nombre, país, región opcional y coordenadas numéricas finitas dentro de sus rangos. Se prefiere el nombre en español cuando está disponible. Una fila dañada causa 503 en vez de descartarse para aparentar una coincidencia única. Las filas con el mismo país y coordenadas exactas se consideran duplicados de la misma ubicación.
+
+| Resultado de geocodificación | Comportamiento |
+| --- | --- |
+| Una coincidencia válida y no truncada | Devuelve internamente `GeoLocation` con nombre, país, región y coordenadas para TK05–TK07. No inventa desplazamiento horario, clima ni consejo. |
+| Sin coincidencias, sin alcanzar el límite del proveedor | HTTP 404, `CIUDAD_NO_ENCONTRADA`. Permite corregir ciudad, país o región. |
+| Más de una ubicación después de filtrar y deduplicar | HTTP 409, `CIUDAD_AMBIGUA`, con candidatos. No selecciona el primero. |
+| Cinco resultados originales y cero/uno después de filtrar | HTTP 503 y pedido de mayor precisión: la lista pudo ser truncada y no se puede asegurar ausencia o unicidad. |
+| Clave ausente | HTTP 503 sin abrir conexión. Health y las pruebas siguen funcionando. |
+| Límite HTTP 429 del proveedor | HTTP 429 con `LIMITE_ALCANZADO`. |
+| Timeout, red, HTTP 401/403 u otra falla externa | HTTP 503 con un mensaje público; no pide iniciar sesión a la persona que usa Angular. |
+| JSON incorrecto, respuesta demasiado grande o datos inválidos | HTTP 503 sin reenviar el cuerpo del proveedor. |
+
+El cuerpo externo se limita a 256 KiB y cinco resultados. Los timeouts de conexión y socket se configuran por separado; son límites por operación, no una garantía de tiempo total frente a DNS o respuestas que llegan lentamente. La revisión del presupuesto total de solicitud queda para TK09. No hay reintentos en TK04.
+
+Para usar geocodificación real, colocar la clave únicamente en `OPENWEATHER_API_KEY` del `.env` del backend y reiniciar Django. No ponerla en la URL pública de esta API ni en Angular. Los timeouts nuevos tienen valores por defecto aunque el `.env` existente no los incluya; el archivo privado no se sobrescribe.
+
+La comprobación de TK04 usó mocks y un servidor HTTP local con proveedor simulado. No requirió API keys reales ni consumió consultas externas. Las respuestas meteorológicas completas siguen pendientes de TK05–TK07.
 
 ## Coordinación con el frontend
 
@@ -212,7 +244,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | TK01 | Definir documentación y organización del backend | Ninguna | S | CP15 | En curso: documentación local lista, tablero a cargo del usuario. |
 | TK02 | Configurar Django sin base de datos | TK01 | S | CP01, CP12, CP13 | Implementación local verificada; evidencia al final del README. |
 | TK03 | Definir contrato JSON y validar las entradas | TK02 | S | CP02, CP03, CP11 | Implementación local verificada; evidencia al final del README. |
-| TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Pendiente |
+| TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Implementación local verificada con proveedor simulado; evidencia al final. |
 | TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Pendiente |
 | TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Pendiente |
 | TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Pendiente |
@@ -243,7 +275,7 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 ## Decisiones pendientes
 
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
-- Integrar el contrato v1 de TK03 con la resolución de ciudades en TK04 y la composición de respuesta en TK07; adaptar el formulario y tipos al iniciar frontend TK05.
+- Componer la respuesta completa en TK07 usando la ubicación resuelta de TK04; adaptar el formulario y tipos al iniciar frontend TK05.
 - Producto meteorológico disponible en OpenWeather: antes de integrar clima y pronóstico.
 - Modelo habilitado en Groq, tiempos de espera, reintentos y límites: antes de la integración y publicación.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
@@ -281,3 +313,15 @@ La ruta usada para comprobar CORS aún no está implementada: el test client con
 - `manage.py check` y `pip check` sin incidencias. HTTP real comprobado en localhost: health 200, entradas inválidas 400, consulta válida 503 y POST 405, todos con JSON y CORS para Angular local.
 
 No se consultó OpenWeather/Groq, no se creó SQLite, no se ejecutaron migraciones ni se modificó el frontend. No se generó commit, PR ni despliegue.
+
+## Evidencia local de TK04
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18. Sin dependencias nuevas: el transporte usa la biblioteca estándar de Python.
+
+- CP04: cliente HTTPS con host/ruta fijos, parámetros codificados y timeouts explícitos; ubicación válida con nombre español, país, región y coordenadas, incluidos ceros. Sin llamadas externas en las pruebas.
+- CP05: listas vacías producen 404, varias ubicaciones producen 409 con candidatos conformes al esquema, país/región permiten precisar y no se elige silenciosamente la primera coincidencia. Se verificaron duplicados y el límite de cinco resultados.
+- Fallas controladas: timeout en conexión/envío/lectura, error de protocolo, HTTP 401/403/429/5xx, redirecciones, JSON inválido, respuestas grandes, números no finitos, coordenadas fuera de rango y filas dañadas. Los cuerpos del proveedor y la clave no se copian a mensajes públicos.
+- 63 pruebas aprobadas sin BD ni red externa. Se conserva la regresión de contrato, CORS, health y validación previa a proveedores. `manage.py check` y `pip check` sin incidencias.
+- HTTP local con geocodificación simulada: 400, 404, 409, 429 y 503 verificados con JSON y CORS para Angular. La consulta resuelta devuelve todavía 503 porque no se implementó el clima de TK05.
+
+No se probó una cuenta real de OpenWeather, no se consumieron consultas externas ni se consultó Groq. El `.env` privado y el frontend se conservaron sin cambios. No se creó BD, migración, endpoint adicional, commit, PR ni despliegue.
