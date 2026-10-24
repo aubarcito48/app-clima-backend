@@ -6,7 +6,7 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK08: pruebas del backend y del contrato verificadas.** La suite aislada aprueba 134 pruebas sin leer el `.env` privado ni permitir conexiones externas o a BD. El endpoint integrado en TK07 conserva su contrato y comportamiento. El usuario administra el tablero Kanban.
+**TK09: seguridad y configuración de producción preparadas.** Se validan hosts y orígenes concretos, se exige HTTPS y se registran eventos mínimos sin mensajes ni trazas internas. La suite aislada aprueba 140 pruebas; el despliegue y su comprobación en Render corresponden a TK10.
 
 `GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida, resuelve la ubicación y consulta los servicios. Con clima actual válido responde 200, incluso si el pronóstico o la IA no están disponibles. Devuelve 400 para entrada inválida, 404 sin coincidencias, 409 con candidatos ante ambigüedad y 429/503 cuando no puede obtener ubicación o clima actual. La verificación local usa proveedores simulados; no acredita acceso a cuentas reales.
 
@@ -22,7 +22,7 @@ La numeración TK01–TK10 de este repositorio es independiente de la del fronte
 - Devolver JSON estable, errores recuperables y disponibilidad parcial por bloque.
 - Exponer un health check independiente de los proveedores.
 
-No se incluyen base de datos, ORM, modelos persistentes, migraciones, cuentas, autenticación, sesiones, administrador ni historial funcional de consultas. Los registros operativos previstos se enviarán a consola sin credenciales ni prompts completos.
+No se incluyen base de datos, ORM, modelos persistentes, migraciones, cuentas, autenticación, sesiones, administrador ni historial funcional de consultas. En producción los registros operativos se envían a consola mediante una lista de campos permitidos.
 
 ## Responsabilidades y organización prevista
 
@@ -71,6 +71,7 @@ api/urls.py                      Rutas health y clima
 api/views.py                     Health, endpoint integrado y errores públicos
 api/validation.py                Formulario y consulta normalizada sin persistencia
 api/responses.py                 JSON uniforme y control de método GET
+api/operational.py               Logs seguros de consola y eventos HTTP en producción
 api/services/openweather.py      Transporte HTTPS común con destinos fijos y límites
 api/services/geocoding.py        Resolución de ubicaciones de OpenWeather
 api/services/weather.py          Clima actual, pronóstico y normalización sin HTTP público
@@ -85,6 +86,7 @@ api/test_weather.py              Pruebas de unidades, fechas y fallas meteoroló
 api/test_recommendations.py      Pruebas del SDK con transporte HTTP en memoria
 api/test_climate.py              Integración del endpoint con proveedores simulados
 api/test_regression.py           Recorrido HTTP completo con transportes simulados
+api/test_security.py             Seguridad HTTP, logs y configuración de producción
 scripts/create_local_env.py      Preparación segura del .env local
 scripts/test_backend.py          Suite aislada de credenciales, red y BD
 ```
@@ -101,6 +103,7 @@ scripts/test_backend.py          Suite aislada de credenciales, red y BD
 | `DJANGO_DEBUG` | Booleano explícito. Local admite true/false; producción rechaza true. |
 | `DJANGO_ALLOWED_HOSTS` | Hosts separados por comas. Local: localhost, 127.0.0.1 y [::1]. Producción exige hosts explícitos sin `*`. |
 | `CORS_ALLOWED_ORIGINS` | Orígenes separados por comas. Local: http://localhost:4200 y http://127.0.0.1:4200. |
+| `DJANGO_TRUST_PROXY_HTTPS` | false por defecto. Activa confianza en `X-Forwarded-Proto` solo detrás de un proxy que elimine el valor del cliente y establezca el suyo. |
 | `OPENWEATHER_API_KEY` | Necesaria para geocodificación y servicios meteorológicos reales. No hace falta para iniciar Django, health o las pruebas. Nunca se envía a Angular. |
 | `OPENWEATHER_CONNECT_TIMEOUT_SECONDS` | Timeout de conexión: 3 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
 | `OPENWEATHER_READ_TIMEOUT_SECONDS` | Timeout de operaciones de socket después de conectar: 5 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
@@ -112,7 +115,7 @@ scripts/test_backend.py          Suite aislada de credenciales, red y BD
 
 El middleware CORS se aplica a `/api/`, admite GET/OPTIONS y no habilita credenciales de navegador ni comodines. Un origen ajeno no recibe `Access-Control-Allow-Origin`. Esto habilita lectura en el navegador; no autentica la API ni bloquea clientes que no usan CORS. [Configuración de django-cors-headers](https://github.com/adamchainz/django-cors-headers#setup).
 
-Para comprobar el entorno de producción se deben preparar sus variables y ejecutar `python manage.py check --settings=config.settings.production`. El `.env` local creado usa `DJANGO_DEBUG=true`, por lo que se debe reemplazar o sobrescribir esa variable con false antes de esa comprobación. En Render se configurarán un secreto propio y los hosts/orígenes reales. La revisión completa de seguridad y el despliegue pertenecen a TK09–TK10.
+Para comprobar el entorno de producción se deben preparar sus variables y ejecutar `python manage.py check --deploy --settings=config.settings.production`. El `.env` local creado usa `DJANGO_DEBUG=true`, por lo que se debe sobrescribir esa variable con false para esa comprobación. En Render se configurarán un secreto propio y los hosts/orígenes reales. Las decisiones y advertencias de seguridad de TK09 se explican más abajo; el despliegue pertenece a TK10.
 
 ## Pruebas locales
 
@@ -124,7 +127,7 @@ Para comprobar el entorno de producción se deben preparar sus variables y ejecu
 
 Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a proveedores. El comando recomendado `scripts/test_backend.py` deshabilita la lectura de dotenv, establece configuración ficticia y claves vacías, y bloquea sockets, SQLite y conexiones de Django antes de inicializar la aplicación. Las pruebas que necesitan proveedores usan claves ficticias y transportes simulados. No hace falta crear `.env` para ejecutar esta suite.
 
-El bloqueo falla ante un intento de conexión no simulado y comprueba al terminar que no se haya utilizado. Los casos de configuración de producción se ejecutan en subprocesos con valores ficticios y dotenv deshabilitado heredado; solo realizan comprobaciones de configuración. El comando no modifica archivos de entorno ni inicia un servidor. `--shuffle` permite repetir un orden alternativo mediante una semilla explícita.
+El bloqueo falla ante un intento de conexión no simulado y comprueba al terminar que no se haya utilizado. Los casos de producción se ejecutan en subprocesos con valores ficticios y dotenv deshabilitado; comprueban configuración y, desde TK09, HTTP y logs con el cliente de Django y conexiones bloqueadas. El comando no modifica archivos de entorno ni inicia un servidor. `--shuffle` permite repetir un orden alternativo mediante una semilla explícita.
 
 El comando estándar `manage.py test` sigue disponible, pero carga la configuración local de Django; para una ejecución independiente de las credenciales se recomienda el script anterior. Las pruebas de contrato requieren `requirements-dev.txt` y verifican sus ejemplos con jsonschema 4.26.0.
 
@@ -179,6 +182,7 @@ Un pronóstico `disponible` tendrá al menos un intervalo. Si está `no_disponib
 | 405 | `METODO_NO_PERMITIDO` | Método no admitido. |
 | 429 | `LIMITE_ALCANZADO` | Límite que impide obtener el clima. |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Geocodificación o clima temporalmente no disponibles. |
+| 500 | `SERVICIO_NO_DISPONIBLE` | Error inesperado con DEBUG desactivado; JSON público sin excepción ni traza. |
 
 Los errores tendrán `codigo` y `mensaje`. El 400 incluirá `errores` con listas de mensajes por `ciudad`, `pais`, `region` o `consulta`. El 409 incluye al menos dos `candidatos`, cada uno con nombre, país, región nullable, latitud y longitud. No se reflejan valores privados ni cuerpos internos de proveedores.
 
@@ -241,7 +245,7 @@ Cada resultado se valida antes de filtrar: nombre, país, región opcional y coo
 | Timeout, red, HTTP 401/403 u otra falla externa | HTTP 503 con un mensaje público; no pide iniciar sesión a la persona que usa Angular. |
 | JSON incorrecto, respuesta demasiado grande o datos inválidos | HTTP 503 sin reenviar el cuerpo del proveedor. |
 
-El cuerpo externo se limita a 256 KiB y cinco resultados. Los timeouts de conexión y socket se configuran por separado; son límites por operación, no una garantía de tiempo total frente a DNS o respuestas que llegan lentamente. La revisión del presupuesto total de solicitud queda para TK09. No hay reintentos en TK04.
+El cuerpo externo se limita a 256 KiB y cinco resultados. Los timeouts de conexión y socket se configuran por separado; son límites por operación, no una garantía de tiempo total frente a DNS o respuestas que llegan lentamente. TK09 documenta el presupuesto y sus límites en la sección de seguridad. No hay reintentos.
 
 Para usar geocodificación real, colocar la clave únicamente en `OPENWEATHER_API_KEY` del `.env` del backend y reiniciar Django. No ponerla en la URL pública de esta API ni en Angular. Los timeouts nuevos tienen valores por defecto aunque el `.env` existente no los incluya; el archivo privado no se sobrescribe.
 
@@ -306,7 +310,7 @@ El contexto se limita a 12.000 caracteres. Se requiere clima actual válido y no
 
 Se usa el [SDK oficial de Groq para Python](https://github.com/groq/groq-python) con modelo tomado de `.env`, destino fijo `https://api.groq.com`, TLS verificado y sin proxies/base URL del entorno ni redirecciones. Se solicitan una única respuesta, sin streaming y sin uso de herramientas.
 
-Los reintentos del SDK se fijan explícitamente en cero. Los timeouts de conexión, lectura, escritura y pool se establecen con HTTPX; son límites por operación, no un plazo total absoluto. El presupuesto global de solicitud se revisará en TK09. La clave se utiliza solo en la cabecera de autorización del servidor y no forma parte del contexto ni de la respuesta pública.
+Los reintentos del SDK se fijan explícitamente en cero. Los timeouts de conexión, lectura, escritura y pool se establecen con HTTPX; son límites por operación, no un plazo total absoluto. TK09 documenta sus límites más abajo. La clave se utiliza solo en la cabecera de autorización del servidor y no forma parte del contexto ni de la respuesta pública.
 
 La respuesta debe contener una única elección completa con `finish_reason=stop`, texto no vacío, hasta 600 caracteres y 80 palabras. Se rechazan truncamientos, respuestas de herramientas, estructuras incorrectas y caracteres de control/invisibles. El texto se devuelve como string JSON, sin ejecutarlo ni interpretarlo como HTML. El frontend deberá seguir renderizándolo como texto.
 
@@ -364,7 +368,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Servicio verificado con SDK y transporte simulado; evidencia al final. |
 | TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Implementación local verificada con proveedores simulados; evidencia al final. |
 | TK08 | Ejecutar pruebas del backend y del contrato | TK07 | M | CP01–CP11, CP15 | Suite aislada y regresión verificadas; evidencia al final. |
-| TK09 | Preparar seguridad y configuración de producción | TK08 | M | CP12, CP13 | Pendiente |
+| TK09 | Preparar seguridad y configuración de producción | TK08 | M | CP12, CP13 | Configuración, HTTP y logs verificados localmente; evidencia al final. |
 | TK10 | Publicar Django en Render y validar la integración | TK09 y acceso a las cuentas de los proveedores | M | CP12, CP13, CP14, CP15 | Pendiente |
 
 Cada tarjeta conservará objetivo, actividades, aceptación, prioridad, tamaño, responsable, dependencias, requisitos, historias, pruebas y evidencia. Los textos completos están en `Tareas_Backend_App_Clima.md`, entregado en la carpeta de trabajo junto al repositorio; no se duplican en nuevos documentos de este repositorio.
@@ -392,9 +396,31 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
 - Adaptar el formulario y tipos al iniciar frontend TK05 usando el endpoint integrado y verificado en TK07–TK08.
 - Verificar en la cuenta la disponibilidad de los productos de clima actual y pronóstico de cinco días preparados en TK05 antes de validar con datos reales.
-- Seleccionar en la cuenta un modelo de Groq habilitado y validar sus permisos y compatibilidad con la petición. TK06 ya fija límites de salida, timeouts por operación y cero reintentos; el presupuesto global se revisará en TK09.
+- Seleccionar en la cuenta un modelo de Groq habilitado y validar sus permisos y compatibilidad. Al desplegar en TK10, verificar proxy HTTPS, timeout del servidor y límites/cuotas externos descritos en TK09.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
 - MCP queda como evolución posible; no es una dependencia de esta primera implementación.
+
+## Seguridad de producción de TK09
+
+La configuración de `config.settings.production` rechaza DEBUG true, secretos cortos o triviales, hosts vacíos, comodines y sufijos que habiliten subdominios. `DJANGO_ALLOWED_HOSTS` recibe nombres exactos sin protocolo, puerto ni ruta. CORS exige una lista no vacía de orígenes concretos: HTTPS para sitios publicados; HTTP se permite únicamente para localhost y direcciones loopback de Angular. Se rechazan credenciales, rutas, query strings y fragmentos en los orígenes.
+
+Producción redirige HTTP a HTTPS y envía `nosniff`, `DENY`, política de referencia `no-referrer` y HSTS durante una hora para el host concreto. No se habilitan subdominios ni preload HSTS antes de conocer la infraestructura. `DJANGO_TRUST_PROXY_HTTPS=false` no confía en encabezados reenviados. Para activar esa opción en TK10 hay que verificar que el proxy controle `X-Forwarded-Proto` y que el servicio no sea accesible evitando ese proxy. Esto sigue la [documentación de Django sobre proxies HTTPS](https://docs.djangoproject.com/en/5.2/ref/settings/#secure-proxy-ssl-header).
+
+`check --deploy` conserva tres advertencias intencionales, sin silenciarlas: `security.W003` por no usar middleware CSRF en una API que solo admite GET y no usa cookies/sesiones; `security.W005` y `security.W021` por limitar HSTS al host y no entrar en preload. Si se añaden métodos que cambien estado, autenticación o cookies, habrá que revisar CSRF antes de habilitarlos. Las pruebas exigen que no aparezcan otras advertencias con la configuración ficticia válida. La [lista de despliegue de Django](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/) guía esta revisión.
+
+Los logs de aplicación en producción son JSON en consola: evento, nivel, categoría fija de ruta (`health`, `climate`, `other`), estado HTTP y duración en milisegundos. El formatter no serializa mensajes libres, argumentos, request, URL, query, ciudad, cabeceras, cuerpos, excepciones ni trazas. Los loggers de Django pasan por ese formatter y los de Groq/HTTPX/HTTPCore permanecen silenciados. Un fallo inesperado devuelve HTTP 500 con código `SERVICIO_NO_DISPONIBLE` y mensaje fijo; CORS sigue aplicado. Las respuestas bajo `/api/` llevan `Cache-Control: no-store`. Los logs de acceso del hosting/servidor son independientes: configurar en TK10 un formato sin query strings ni cabeceras; esta configuración de Django no controla logs del proveedor de hosting.
+
+### Esperas y consumo
+
+| Operación por consulta válida | Máximo y límites actuales |
+| --- | --- |
+| OpenWeather | Hasta tres peticiones secuenciales: geocodificación, clima actual y pronóstico. Cero reintentos/redirecciones; hasta 256 KiB por respuesta. Conexión 3 s y operaciones de socket 5 s por defecto, cada ajuste mayor que 0 y hasta 30 s. |
+| Groq | Hasta una petición y una elección, sin streaming, herramientas ni reintentos. Conexión/escritura/pool 3 s y lectura 8 s por defecto; cada ajuste hasta 30 s. Contexto hasta 12.000 caracteres y ocho intervalos; salida 160 tokens por defecto, configurable entre 32 y 512. Texto aceptado hasta 80 palabras y 600 caracteres. |
+| Fallas tempranas | Entrada inválida y health: cero peticiones. Falla de ubicación: no se consulta clima. Falla de clima actual: no se consulta pronóstico ni IA. Groq sin clave/modelo: cero peticiones a IA. |
+
+Los timeouts son por operación o inactividad, no un plazo máximo de toda la consulta: DNS, varias operaciones y una respuesta que entrega fragmentos lentamente pueden prolongar el tiempo total. Los [timeouts de HTTPX](https://www.python-httpx.org/advanced/timeouts/) distinguen conexión, lectura, escritura y pool. No se promete un límite global sumando esos valores. En TK10 se debe ajustar y verificar el timeout del servidor/proxy; matar una solicitud tampoco garantiza cancelar una petición que el proveedor ya recibió.
+
+No hay caché, deduplicación, cuota diaria ni rate limiting de aplicación. Una nueva consulta puede volver a consumir hasta tres llamadas de OpenWeather y una de Groq. CORS limita lectura desde navegadores, no acceso de bots ni uso de claves del lado servidor. Antes de exponer el servicio se deben configurar cuotas/presupuesto en las cuentas y límites de acceso/concurrencia en la infraestructura disponible. No se inventan cuotas ni precios: dependen de la cuenta y del modelo elegidos. Una IA no disponible sigue permitiendo devolver el clima, sin reintentos que multipliquen consumo. Las claves reales se configuran únicamente en `.env` ignorado o variables privadas del hosting; `.env.example` contiene nombres y valores públicos de referencia.
 
 ## Evidencia local de TK01
 
@@ -502,3 +528,12 @@ Resultados:
 - `manage.py check`, `pip check` y `git diff --check` sin incidencias. Sin defectos bloqueantes en los casos ejecutados; no se necesitaron cambios en el comportamiento del endpoint.
 
 La verificación acredita el comportamiento local con proveedores simulados. CP14 requiere publicación y cuentas reales en TK10; no se verificaron permisos, cuotas ni calidad de un modelo real. TK09 continúa pendiente para la revisión de seguridad y configuración de producción. Frontend, `.env`, dependencias y servidor local sin cambios; sin BD, migraciones, commit, PR ni despliegue.
+
+## Evidencia local de TK09
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18, groq 1.7.0 y HTTPX 0.28.1.
+
+- CP12: rechazo de configuración insegura sin reflejar valores privados; formatter que descarta mensajes, argumentos, request y excepciones. Error inesperado simulado con claves, query, ciudad y prompt ficticios: HTTP 500 genérico y logs de consola sin esos valores, `appid` ni traceback. SDK y clientes conservan destinos fijos, cierres, timeouts y cero reintentos ya cubiertos por la suite.
+- CP13: cliente HTTP de Django bajo ajustes reales de producción, sin BD ni red externa. Orígenes HTTPS autorizado y Angular local reciben CORS; otro origen no recibe autorización. Preflight GET, redirección HTTPS, rechazo de host ajeno, encabezados seguros y no-store verificados. La confianza en el encabezado del proxy se prueba activada y desactivada.
+- **140 pruebas aprobadas** mediante `scripts/test_backend.py`, incluyendo seis casos nuevos de seguridad. Comprobaciones de despliegue con solo las tres advertencias justificadas arriba; no se silencian advertencias.
+- `.env` privado conservado, `.env.example` actualizado sin secretos y sin cambios en frontend, BD o dependencias. El despliegue, las cuotas reales, el proxy y los logs del hosting se verificarán en TK10. No se realizaron consultas externas, commit, PR ni publicación.

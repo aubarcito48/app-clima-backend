@@ -7,6 +7,14 @@ from .services.geocoding import AmbiguousLocation, GeocodingFailure
 from .services.weather import WeatherFailure
 
 
+def server_error(request):
+    response = error_response(
+        "SERVICIO_NO_DISPONIBLE", "No se pudo completar la consulta. Intentá más tarde.", status=500,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 @get_only
 def health(request):
     # Liveness de la aplicación: no prueba proveedores, credenciales ni BD.

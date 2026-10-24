@@ -19,6 +19,7 @@ def main():
         "DJANGO_SETTINGS_MODULE": "config.settings.development",
         "DJANGO_SECRET_KEY": "TEST-ONLY-NOT-A-REAL-SECRET-abcdefghijklmnopqrstuvwxyz-0123456789",
         "DJANGO_DEBUG": "false",
+        "DJANGO_TRUST_PROXY_HTTPS": "false",
         "DJANGO_ALLOWED_HOSTS": "testserver,localhost,127.0.0.1",
         "CORS_ALLOWED_ORIGINS": "http://localhost:4200,http://127.0.0.1:4200",
         "OPENWEATHER_API_KEY": "",
