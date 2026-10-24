@@ -1,14 +1,14 @@
 # App Clima Backend
 
-Backend previsto en Python y Django para resolver una ciudad, obtener clima y pronóstico de OpenWeather y generar una recomendación en español con Groq. El frontend Angular consumirá una única API JSON del backend.
+Backend en Python y Django, en preparación para resolver una ciudad, obtener clima y pronóstico de OpenWeather y generar una recomendación en español con Groq. El frontend Angular consumirá una única API JSON del backend.
 
 Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-clima-backend). Frontend: [aubarcito48/app-clima](https://github.com/aubarcito48/app-clima).
 
 ## Estado actual
 
-**TK01: documentación local preparada.** Este README concentra la presentación del proyecto, su alcance, planificación y coordinación con Angular. El usuario administra el tablero Kanban; en esta sesión no se publicaron wiki, milestone ni tarjetas en GitHub.
+**TK02: configuración base implementada y verificada.** Django inicia sin base de datos, con configuración local/producción, credenciales por entorno y CORS explícito para Angular local. El usuario administra el tablero Kanban.
 
-Todavía no se creó el proyecto Django, no se instalaron dependencias ni se implementaron endpoints. La configuración ejecutable empieza en TK02. No hay comandos de arranque o pruebas del backend disponibles aún.
+Todavía no se implementaron endpoints de salud o clima ni llamadas a OpenWeather/Groq. Los endpoints empiezan en TK03. Con DEBUG true y rutas todavía vacías, Django muestra su página de bienvenida con HTTP 200; con DEBUG false, una ruta inexistente devuelve 404. La bienvenida no es un health check ni una respuesta de la API.
 
 La numeración TK01–TK10 de este repositorio es independiente de la del frontend. En las conversaciones y referencias cruzadas se debe indicar siempre a qué repositorio pertenece cada tarea. Los requisitos e historias del backend usan el prefijo BE.
 
@@ -33,7 +33,69 @@ Angular → Django → OpenWeather
 
 Angular se encarga de la entrada, las consultas HTTP y la presentación. Django valida, resuelve la ubicación, consulta los proveedores, normaliza sus respuestas y protege las claves. El despliegue previsto es Django en Render y Angular en Vercel.
 
-Al crear el proyecto se separarán configuración y rutas, vistas, validadores, esquemas de respuesta y clientes de OpenWeather/Groq. Los destinos externos serán fijos; ciudad, país y región se enviarán como parámetros codificados. La estructura concreta de carpetas y las versiones compatibles se registrarán en TK02.
+La configuración y las rutas están separadas de la aplicación `api`. Las vistas, validadores, esquemas de respuesta y clientes de OpenWeather/Groq se implementarán en las tareas correspondientes. Los destinos externos serán fijos; ciudad, país y región se enviarán como parámetros codificados.
+
+## Versiones e instalación local
+
+Configuración verificada con Python 3.14.3, Django 5.2.18 LTS, django-cors-headers 4.9.0 y python-dotenv 1.2.4. `requirements.txt` fija también las dependencias transitivas. La [compatibilidad oficial de Django 5.2](https://docs.djangoproject.com/en/5.2/faq/install/) incluye Python 3.14 desde Django 5.2.8.
+
+Desde `app-clima-backend`, en PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe scripts/create_local_env.py
+.venv\Scripts\python.exe manage.py check
+.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+No hace falta activar el entorno virtual: los comandos usan su intérprete directamente. El script crea `.env` a partir de `.env.example`, genera un secreto aleatorio de Django sin mostrarlo y conserva intacto un `.env` que ya exista.
+
+No ejecutar `migrate` ni `makemigrations`: este proyecto no usa persistencia. El comando local `runserver` conserva las comprobaciones de Django y omite exclusivamente la revisión de migraciones. `DATABASES = {}` deja el backend dummy de Django, sin conexión a SQLite u otra BD.
+
+## Organización implementada
+
+```text
+config/settings/base.py          Ajustes comunes, carga de .env y ausencia de BD
+config/settings/development.py   Ajustes locales y orígenes de Angular
+config/settings/production.py    DEBUG desactivado, hosts explícitos y validación del secreto
+config/settings/environment.py   Parseo de booleanos, listas y secreto obligatorio
+config/urls.py                   Prefijo /api/v1/ reservado para la API
+config/wsgi.py                   Entrada WSGI; producción por defecto
+config/asgi.py                   Entrada ASGI; producción por defecto
+api/urls.py                      Rutas vacías hasta TK03
+api/views.py                     Vistas reservadas para TK03
+api/management/commands/         runserver sin comprobación de migraciones
+api/tests.py                     Pruebas de configuración sin base de datos
+scripts/create_local_env.py      Preparación segura del .env local
+```
+
+`manage.py` usa `config.settings.development` por defecto. WSGI/ASGI usan `config.settings.production` salvo que se establezca explícitamente `DJANGO_SETTINGS_MODULE`. La instalación del servidor de producción y los comandos de Render quedan para TK10.
+
+## Configuración por entorno
+
+`.env` se lee con `python-dotenv`, sin sobrescribir las variables del sistema o de Render. `.env`, sus variantes, `.venv`, cachés y archivos SQLite quedan excluidos de Git; `.env.example` sí se versiona sin secretos.
+
+| Variable | Uso en TK02 |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | Obligatoria. Secreto privado generado para desarrollo; producción requiere uno robusto y no admite el prefijo inseguro de Django. |
+| `DJANGO_DEBUG` | Booleano explícito. Local admite true/false; producción rechaza true. |
+| `DJANGO_ALLOWED_HOSTS` | Hosts separados por comas. Local: localhost, 127.0.0.1 y [::1]. Producción exige hosts explícitos sin `*`. |
+| `CORS_ALLOWED_ORIGINS` | Orígenes separados por comas. Local: http://localhost:4200 y http://127.0.0.1:4200. |
+| `OPENWEATHER_API_KEY`, `GROQ_API_KEY`, `GROQ_MODEL` | Vacíos y opcionales hasta integrar los proveedores. Nunca se envían a Angular. |
+
+El middleware CORS se aplica a `/api/`, admite GET/OPTIONS y no habilita credenciales de navegador ni comodines. Un origen ajeno no recibe `Access-Control-Allow-Origin`. Esto habilita lectura en el navegador; no autentica la API ni bloquea clientes que no usan CORS. [Configuración de django-cors-headers](https://github.com/adamchainz/django-cors-headers#setup).
+
+Para comprobar el entorno de producción se deben preparar sus variables y ejecutar `python manage.py check --settings=config.settings.production`. El `.env` local creado usa `DJANGO_DEBUG=true`, por lo que se debe reemplazar o sobrescribir esa variable con false antes de esa comprobación. En Render se configurarán un secreto propio y los hosts/orígenes reales. La revisión completa de seguridad y el despliegue pertenecen a TK09–TK10.
+
+## Pruebas locales
+
+```powershell
+.venv\Scripts\python.exe manage.py test --verbosity 2
+.venv\Scripts\python.exe -m pip check
+```
+
+Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a proveedores. Los casos de producción se ejecutan en procesos aislados con valores ficticios de prueba; no modifican el `.env` real ni necesitan API keys.
 
 ## Contrato propuesto para acordar en TK03
 
@@ -86,7 +148,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | ID | Tarea | Dependencias del backend | Tamaño | Pruebas | Estado de referencia local |
 | --- | --- | --- | --- | --- | --- |
 | TK01 | Definir documentación y organización del backend | Ninguna | S | CP15 | En curso: documentación local lista, tablero a cargo del usuario. |
-| TK02 | Configurar Django sin base de datos | TK01 | S | CP01, CP12, CP13 | Pendiente |
+| TK02 | Configurar Django sin base de datos | TK01 | S | CP01, CP12, CP13 | Implementación local verificada; evidencia al final del README. |
 | TK03 | Definir contrato JSON y validar las entradas | TK02 | S | CP02, CP03, CP11 | Pendiente |
 | TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Pendiente |
 | TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Pendiente |
@@ -110,7 +172,7 @@ Una tarjeta se cierra con sus criterios y pruebas aplicables verificados y evide
 
 ## Credenciales y configuración previstas
 
-Las claves permanecerán en el `.env` local del backend, excluido de Git, o en variables privadas de Render. TK02 preparará `.gitignore`, `.env.example` sin secretos y la lectura de configuración. No se necesitan claves para esta tarea documental.
+Las claves permanecerán en el `.env` local del backend, excluido de Git, o en variables privadas de Render. TK02 incluye `.gitignore`, `.env.example` sin secretos y la lectura de configuración. No se necesitan claves de proveedores para iniciar la base ni ejecutar sus pruebas.
 
 Variables previstas: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `OPENWEATHER_API_KEY`, `GROQ_API_KEY`, `GROQ_MODEL`, `CORS_ALLOWED_ORIGINS` y ajustes explícitos de espera y reintentos.
 
@@ -118,7 +180,7 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 
 ## Decisiones pendientes
 
-- Versiones compatibles de Python/Django y dependencias, estructura final y módulo de arranque: TK02. Se detectó Python 3.14.3 local, sin seleccionar todavía la versión del proyecto.
+- Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
 - Contrato definitivo, formato de país/región, validaciones y candidatos de ciudad: TK03.
 - Producto meteorológico disponible en OpenWeather: antes de integrar clima y pronóstico.
 - Modelo habilitado en Groq, tiempos de espera, reintentos y límites: antes de la integración y publicación.
@@ -134,3 +196,14 @@ Se revisaron los tres archivos fuente, el repositorio y su remoto. Se preparó e
 CP15: revisión documental local realizada; falta registrar y verificar el tablero con sus diez tarjetas y enlaces para completar el criterio de seguimiento. La wiki externa no se publicó: por la preferencia acordada, la documentación se concentra en este README. No se declara CP15 íntegramente aprobado ni TK01 cerrada en el tablero.
 
 CP01–CP14 no ejecutados. No se creó Django, entorno virtual, base de datos, migraciones, endpoints ni despliegue. No se generó commit o PR en esta sesión.
+
+## Evidencia local de TK02
+
+24 de octubre de 2026. Entorno: Windows, Python 3.14.3 y dependencias fijadas en `requirements.txt`. Esta sección actualiza el estado posterior al registro histórico de TK01.
+
+- CP01: `manage.py check` sin incidencias; arranque real en http://127.0.0.1:8000; 16 pruebas aprobadas con omisión de la base de datos de pruebas. Se comprobó la ausencia de modelos, apps de persistencia, carpeta de migraciones y `db.sqlite3`. Se bloqueó la apertura de conexiones durante las comprobaciones y solicitudes de prueba.
+- CP12, alcance de TK02: `.env` ignorado y no versionado, plantilla sin secretos, generador local que no sobrescribe el archivo existente, secreto obligatorio y producción que rechaza DEBUG true, hosts vacíos/comodines y secreto vacío. La revisión de clientes externos, logs y despliegue queda para TK09–TK10.
+- CP13, alcance de TK02: origen Angular localhost y 127.0.0.1 autorizados, origen ajeno sin autorización de lectura y preflight GET con HTTP 200. Verificado con test client y solicitudes HTTP reales al servidor local.
+- `pip check` sin dependencias incompatibles. No se instalaron clientes de OpenWeather/Groq ni servidor de producción.
+
+La ruta usada para comprobar CORS aún no está implementada: el test client con DEBUG false recibió 404 y el servidor local con DEBUG true mostró la bienvenida de Django con 200. No se implementó health, clima ni el contrato de TK03. No se ejecutaron migraciones, no se modificó el frontend y no se generó commit, PR ni despliegue.
