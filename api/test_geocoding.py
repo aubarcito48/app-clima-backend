@@ -42,7 +42,7 @@ class IsolatedGeocodingTests(SimpleTestCase):
 class GeocodingTransportTests(IsolatedGeocodingTests):
     def setUp(self):
         super().setUp()
-        factory = patch("api.services.geocoding.http.client.HTTPSConnection")
+        factory = patch("api.services.openweather.http.client.HTTPSConnection")
         self.factory = factory.start()
         self.addCleanup(factory.stop)
         self.connection = self.factory.return_value

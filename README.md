@@ -6,9 +6,9 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK04: resolución de ciudades con OpenWeather implementada.** Se mantiene el contrato v1, la validación y el health de TK03. Django opera sin base de datos y el usuario administra el tablero Kanban.
+**TK05: servicios de clima actual y pronóstico implementados.** Se mantiene la resolución de ciudades de TK04 y el contrato v1 de TK03. Django opera sin base de datos y el usuario administra el tablero Kanban.
 
-`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida y resuelve la ubicación: devuelve 400 para entrada inválida, 404 sin coincidencias y 409 con candidatos si hay ambigüedad. Una ubicación resuelta sigue terminando en 503, porque aún faltan clima y recomendación. No se devuelve clima inventado ni se consulta Groq.
+`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida y resuelve la ubicación: devuelve 400 para entrada inválida, 404 sin coincidencias y 409 con candidatos si hay ambigüedad. Una ubicación resuelta sigue terminando en 503 hasta componer la respuesta HTTP completa en TK07. TK05 entrega los servicios meteorológicos probados por separado, sin conectarlos aún a esa vista ni consultar Groq.
 
 La numeración TK01–TK10 de este repositorio es independiente de la del frontend. En las conversaciones y referencias cruzadas se debe indicar siempre a qué repositorio pertenece cada tarea. Los requisitos e historias del backend usan el prefijo BE.
 
@@ -69,12 +69,15 @@ api/urls.py                      Rutas health y clima
 api/views.py                     Health y validación previa a la futura integración
 api/validation.py                Formulario y consulta normalizada sin persistencia
 api/responses.py                 JSON uniforme y control de método GET
-api/services/geocoding.py        Cliente HTTPS y resolución de ubicaciones de OpenWeather
+api/services/openweather.py      Transporte HTTPS común con destinos fijos y límites
+api/services/geocoding.py        Resolución de ubicaciones de OpenWeather
+api/services/weather.py          Clima actual, pronóstico y normalización sin HTTP público
 api/contracts/                   JSON Schema v1 y ejemplos ficticios versionados
 api/management/commands/         runserver sin comprobación de migraciones
 api/tests.py                     Pruebas de configuración sin base de datos
 api/test_contract.py             Pruebas de entradas, HTTP y esquema JSON
 api/test_geocoding.py            Pruebas de transporte, geocodificación y errores con mocks
+api/test_weather.py              Pruebas de unidades, fechas y fallas meteorológicas parciales
 scripts/create_local_env.py      Preparación segura del .env local
 ```
 
@@ -84,13 +87,13 @@ scripts/create_local_env.py      Preparación segura del .env local
 
 `.env` se lee con `python-dotenv`, sin sobrescribir las variables del sistema o de Render. `.env`, sus variantes, `.venv`, cachés y archivos SQLite quedan excluidos de Git; `.env.example` sí se versiona sin secretos.
 
-| Variable | Uso en TK02 |
+| Variable | Uso actual |
 | --- | --- |
 | `DJANGO_SECRET_KEY` | Obligatoria. Secreto privado generado para desarrollo; producción requiere uno robusto y no admite el prefijo inseguro de Django. |
 | `DJANGO_DEBUG` | Booleano explícito. Local admite true/false; producción rechaza true. |
 | `DJANGO_ALLOWED_HOSTS` | Hosts separados por comas. Local: localhost, 127.0.0.1 y [::1]. Producción exige hosts explícitos sin `*`. |
 | `CORS_ALLOWED_ORIGINS` | Orígenes separados por comas. Local: http://localhost:4200 y http://127.0.0.1:4200. |
-| `OPENWEATHER_API_KEY` | Necesaria para consultar geocodificación real desde TK04. No hace falta para iniciar Django, health o las pruebas. Nunca se envía a Angular. |
+| `OPENWEATHER_API_KEY` | Necesaria para geocodificación y servicios meteorológicos reales. No hace falta para iniciar Django, health o las pruebas. Nunca se envía a Angular. |
 | `OPENWEATHER_CONNECT_TIMEOUT_SECONDS` | Timeout de conexión: 3 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
 | `OPENWEATHER_READ_TIMEOUT_SECONDS` | Timeout de operaciones de socket después de conectar: 5 segundos por defecto. Configurable, mayor que 0 y hasta 30 segundos. |
 | `GROQ_API_KEY`, `GROQ_MODEL` | Opcionales y todavía sin uso; se integrarán en TK06. |
@@ -221,6 +224,37 @@ Para usar geocodificación real, colocar la clave únicamente en `OPENWEATHER_AP
 
 La comprobación de TK04 usó mocks y un servidor HTTP local con proveedor simulado. No requirió API keys reales ni consumió consultas externas. Las respuestas meteorológicas completas siguen pendientes de TK05–TK07.
 
+## Clima actual y pronóstico de TK05
+
+`fetch_weather(ubicacion)` recibe un `GeoLocation` de TK04 y devuelve un `WeatherSnapshot` con `ubicacion`, `actual` y `pronostico`. Los tres bloques respetan sus definiciones del esquema v1. No incluyen todavía recomendación ni metadatos de la respuesta HTTP completa: esa composición pertenece a TK07.
+
+El cliente consulta por latitud/longitud los endpoints fijos `/data/2.5/weather` y `/data/2.5/forecast`, con `units=metric` y `lang=es`. Se preparó para los productos [clima actual](https://openweathermap.org/api/current) y [pronóstico de cinco días](https://openweathermap.org/api/forecast5). La disponibilidad real en la cuenta se comprobará con sus credenciales al validar la integración; no se presupone un plan concreto.
+
+Geocodificación y meteorología comparten el transporte HTTPS de `openweather.py`: host/rutas permitidos, parámetros codificados, timeouts de conexión/socket, cuerpo máximo de 256 KiB, sin redirecciones ni reintentos automáticos. La clave permanece exclusivamente en el servidor y no se copian errores externos a las respuestas públicas.
+
+### Normalización
+
+| Dato | Tratamiento |
+| --- | --- |
+| Temperatura y sensación | Se conservan en °C por la solicitud métrica, incluidos ceros y negativos; no se convierten otra vez desde Kelvin. |
+| Viento | La velocidad métrica del proveedor, en m/s, se multiplica por 3,6 y se redondea a tres decimales para km/h. Cero no se confunde con ausencia. |
+| Humedad | Se conserva en %, entre 0 y 100. |
+| Fechas | Se usan los timestamps Unix `dt`, convertidos a ISO 8601 UTC con sufijo Z. No se usa `dt_txt` ni se suma el desplazamiento de la ciudad a la fecha UTC. |
+| Ubicación y hora local | Se conserva la ubicación geocodificada y se añade el desplazamiento en segundos que devuelve el clima actual. No se infiere una zona IANA ni un offset faltante como cero. |
+| Campos opcionales ausentes | Sensación, humedad, viento o descripción quedan en `null`, sin inventar valores. |
+
+Fecha, temperatura y desplazamiento horario del clima actual son necesarios para cumplir el contrato; si faltan o son inválidos, el clima actual no se considera disponible. Se rechazan booleanos usados como números, strings numéricos, NaN/Infinity, humedad fuera de rango, viento negativo, fechas inválidas y estructuras incorrectas. Un campo opcional presente pero inválido no se convierte silenciosamente en `null`.
+
+El pronóstico conserva los intervalos provistos y sus temperaturas, ordenados por `dt`. Admite hasta 40 intervalos para el producto de cinco días; no calcula promedios diarios ni rellena huecos. Se comprueba `cnt` cuando está presente. Una lista vacía se presenta como no disponible; intervalos dañados o timestamps duplicados invalidan el bloque en vez de seleccionar o promediar valores contradictorios.
+
+### Fallas parciales
+
+- Si falla el clima actual, se propaga `WeatherFailure` (503) o `WeatherRateLimited` (429), con código y mensaje públicos controlados. No se consulta el pronóstico.
+- Si el clima actual es válido y falla el pronóstico, incluso por timeout, 429 o estructura incorrecta, se conserva `actual` y se devuelve `pronostico: {"estado":"no_disponible","intervalos":[]}`.
+- Si ambos datos son válidos, el snapshot conserva el clima y todos los intervalos ordenados. Los payloads originales no se modifican.
+
+El servicio está preparado para el posterior HTTP 200 parcial de TK07; TK05 no cambia todavía la vista pública para devolver snapshots incompletos. Las pruebas no necesitan clave real y no hacen llamadas externas. No se modificó el `.env` privado ni se agregaron dependencias.
+
 ## Coordinación con el frontend
 
 | Etapa | Dependencia y entrega |
@@ -245,7 +279,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | TK02 | Configurar Django sin base de datos | TK01 | S | CP01, CP12, CP13 | Implementación local verificada; evidencia al final del README. |
 | TK03 | Definir contrato JSON y validar las entradas | TK02 | S | CP02, CP03, CP11 | Implementación local verificada; evidencia al final del README. |
 | TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Implementación local verificada con proveedor simulado; evidencia al final. |
-| TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Pendiente |
+| TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Servicios verificados con proveedor simulado; evidencia al final. |
 | TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Pendiente |
 | TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Pendiente |
 | TK08 | Ejecutar pruebas del backend y del contrato | TK07 | M | CP01–CP11, CP15 | Pendiente |
@@ -275,8 +309,8 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 ## Decisiones pendientes
 
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
-- Componer la respuesta completa en TK07 usando la ubicación resuelta de TK04; adaptar el formulario y tipos al iniciar frontend TK05.
-- Producto meteorológico disponible en OpenWeather: antes de integrar clima y pronóstico.
+- Componer la respuesta completa en TK07 usando la ubicación de TK04 y los servicios meteorológicos de TK05; adaptar el formulario y tipos al iniciar frontend TK05.
+- Verificar en la cuenta la disponibilidad de los productos de clima actual y pronóstico de cinco días preparados en TK05 antes de validar con datos reales.
 - Modelo habilitado en Groq, tiempos de espera, reintentos y límites: antes de la integración y publicación.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
 - MCP queda como evolución posible; no es una dependencia de esta primera implementación.
@@ -325,3 +359,15 @@ No se consultó OpenWeather/Groq, no se creó SQLite, no se ejecutaron migracion
 - HTTP local con geocodificación simulada: 400, 404, 409, 429 y 503 verificados con JSON y CORS para Angular. La consulta resuelta devuelve todavía 503 porque no se implementó el clima de TK05.
 
 No se probó una cuenta real de OpenWeather, no se consumieron consultas externas ni se consultó Groq. El `.env` privado y el frontend se conservaron sin cambios. No se creó BD, migración, endpoint adicional, commit, PR ni despliegue.
+
+## Evidencia local de TK05
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18. Sin dependencias nuevas.
+
+- CP06: temperaturas cero/negativas, sensación negativa, humedad cero/ausente y viento cero o convertido desde m/s. Por ejemplo, 2,5 m/s se normaliza a 9 km/h. Los datos opcionales ausentes quedan en null y los valores inválidos producen error controlado.
+- CP07: timestamps Unix a UTC, cambio de día, offset local recibido y pronóstico ordenado sin modificar el original, inventar promedios ni usar `dt_txt`. Se comprobaron listas vacías, duplicados, `cnt` incorrecto, filas inválidas y bloques conformes al esquema v1.
+- CP10, capa de servicios: falla del clima actual detiene la consulta de pronóstico; falla o límite del pronóstico conserva clima válido y marca ese bloque como no disponible. La respuesta HTTP completa y sus fallas parciales se integrarán en TK07 y se verificarán integralmente en TK08.
+- 94 pruebas aprobadas, incluida la regresión de geocodificación después de compartir el transporte HTTPS. Red y conexiones de BD bloqueadas en las pruebas nuevas.
+- `manage.py check` y `pip check` sin incidencias. Se verificaron endpoints fijos, coordenadas de la ubicación resuelta, unidades métricas, idioma español, límites de respuesta y errores saneados.
+
+No se usó una cuenta real de OpenWeather, no se hicieron consultas externas ni se integró Groq. El frontend y el `.env` privado se conservaron sin cambios. No se creó BD, migración, endpoint adicional, commit, PR ni despliegue.

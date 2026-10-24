@@ -1,22 +1,18 @@
 """Geocodificación con destino fijo y resultados validados, sin persistencia."""
 
 from dataclasses import asdict, dataclass
-import http.client
-import json
 import math
 import re
 import unicodedata
-from urllib.parse import urlencode
-
-from django.conf import settings
 
 from api.validation import ClimateQuery
+from .openweather import (
+    MAX_RESPONSE_BYTES, OpenWeatherRateLimited, OpenWeatherUnavailable, request_json,
+)
 
 
-GEOCODING_HOST = "api.openweathermap.org"
 GEOCODING_PATH = "/geo/1.0/direct"
 RESULT_LIMIT = 5
-MAX_RESPONSE_BYTES = 256 * 1024
 
 
 class GeocodingFailure(Exception):
@@ -67,49 +63,22 @@ class GeoLocation:
         return asdict(self)
 
 
-def _invalid_json_constant(value):
-    raise ValueError("Número no válido en JSON del proveedor.")
-
-
 class OpenWeatherGeocoding:
     def search(self, query: ClimateQuery):
-        key = settings.OPENWEATHER_API_KEY.strip()
-        if not key:
-            raise GeocodingFailure()
-
         # OpenWeather admite state code solo para EE. UU. No se envía una región
         # libre en esa posición: se filtra contra state en la respuesta validada.
         location_name = query.ciudad + (f",{query.pais}" if query.pais else "")
-        params = urlencode({"q": location_name, "limit": RESULT_LIMIT, "appid": key})
-        connection = http.client.HTTPSConnection(
-            GEOCODING_HOST, timeout=settings.OPENWEATHER_CONNECT_TIMEOUT_SECONDS
-        )
         try:
-            connection.connect()
-            if connection.sock is None:
-                raise GeocodingFailure()
-            connection.sock.settimeout(settings.OPENWEATHER_READ_TIMEOUT_SECONDS)
-            connection.request(
-                "GET", f"{GEOCODING_PATH}?{params}",
-                headers={"Accept": "application/json"},
+            payload = request_json(
+                GEOCODING_PATH, {"q": location_name, "limit": RESULT_LIMIT}
             )
-            response = connection.getresponse()
-            if response.status == 429:
-                raise GeocodingRateLimited()
-            if response.status != 200:
-                # No seguir redirecciones ni reenviar errores/cuerpos con la clave.
-                raise GeocodingFailure()
-            body = response.read(MAX_RESPONSE_BYTES + 1)
-            if len(body) > MAX_RESPONSE_BYTES:
-                raise GeocodingFailure()
-            payload = json.loads(body.decode("utf-8"), parse_constant=_invalid_json_constant)
-            if not isinstance(payload, list) or len(payload) > RESULT_LIMIT:
-                raise GeocodingFailure()
-            return payload
-        except (OSError, http.client.HTTPException, ValueError):
+        except OpenWeatherRateLimited:
+            raise GeocodingRateLimited() from None
+        except OpenWeatherUnavailable:
             raise GeocodingFailure() from None
-        finally:
-            connection.close()
+        if not isinstance(payload, list) or len(payload) > RESULT_LIMIT:
+            raise GeocodingFailure()
+        return payload
 
 
 def _text(value, *, optional=False):
