@@ -1,0 +1,4 @@
+{
+  "codigo": "METODO_NO_PERMITIDO",
+  "mensaje": "Este endpoint admite únicamente GET."
+}

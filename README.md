@@ -6,9 +6,9 @@ Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-
 
 ## Estado actual
 
-**TK06: servicio de recomendaciones con Groq implementado.** Se mantienen los servicios meteorológicos de TK05, la geocodificación y el contrato v1. Django opera sin base de datos y el usuario administra el tablero Kanban.
+**TK07: endpoint de clima inteligente integrado.** La API compone ubicación, clima actual, pronóstico, recomendación y metadatos según el contrato v1. Django opera sin base de datos y el usuario administra el tablero Kanban.
 
-`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida y resuelve la ubicación: devuelve 400 para entrada inválida, 404 sin coincidencias y 409 con candidatos si hay ambigüedad. Una ubicación resuelta sigue terminando en 503 hasta componer la respuesta HTTP completa en TK07. Clima y recomendaciones están probados como servicios separados; la vista pública aún no los llama.
+`GET /api/v1/health/` responde 200 con `{"estado":"ok"}` sin proveedores. `GET /api/v1/clima/` valida, resuelve la ubicación y consulta los servicios. Con clima actual válido responde 200, incluso si el pronóstico o la IA no están disponibles. Devuelve 400 para entrada inválida, 404 sin coincidencias, 409 con candidatos ante ambigüedad y 429/503 cuando no puede obtener ubicación o clima actual. La verificación local usa proveedores simulados; no acredita acceso a cuentas reales.
 
 La numeración TK01–TK10 de este repositorio es independiente de la del frontend. En las conversaciones y referencias cruzadas se debe indicar siempre a qué repositorio pertenece cada tarea. Los requisitos e historias del backend usan el prefijo BE.
 
@@ -68,13 +68,14 @@ config/urls.py                   Prefijo /api/v1/ reservado para la API
 config/wsgi.py                   Entrada WSGI; producción por defecto
 config/asgi.py                   Entrada ASGI; producción por defecto
 api/urls.py                      Rutas health y clima
-api/views.py                     Health y validación previa a la futura integración
+api/views.py                     Health, endpoint integrado y errores públicos
 api/validation.py                Formulario y consulta normalizada sin persistencia
 api/responses.py                 JSON uniforme y control de método GET
 api/services/openweather.py      Transporte HTTPS común con destinos fijos y límites
 api/services/geocoding.py        Resolución de ubicaciones de OpenWeather
 api/services/weather.py          Clima actual, pronóstico y normalización sin HTTP público
 api/services/recommendations.py  Contexto meteorológico y recomendación breve con Groq
+api/services/climate.py          Orquestación por consulta y composición de los cinco bloques
 api/contracts/                   JSON Schema v1 y ejemplos ficticios versionados
 api/management/commands/         runserver sin comprobación de migraciones
 api/tests.py                     Pruebas de configuración sin base de datos
@@ -82,6 +83,7 @@ api/test_contract.py             Pruebas de entradas, HTTP y esquema JSON
 api/test_geocoding.py            Pruebas de transporte, geocodificación y errores con mocks
 api/test_weather.py              Pruebas de unidades, fechas y fallas meteorológicas parciales
 api/test_recommendations.py      Pruebas del SDK con transporte HTTP en memoria
+api/test_climate.py              Integración del endpoint con proveedores simulados
 scripts/create_local_env.py      Preparación segura del .env local
 ```
 
@@ -121,12 +123,12 @@ Las pruebas usan `SimpleTestCase`, no crean una BD de pruebas ni llaman a provee
 
 ## Contrato JSON v1
 
-El [JSON Schema v1](api/contracts/response-v1.schema.json) fija los nombres, tipos y estados de las respuestas de salud, clima y error. Los endpoints actuales implementan salud, validación y métodos. Los bloques meteorológicos y los errores de proveedores se usarán al integrar las tareas siguientes.
+El [JSON Schema v1](api/contracts/response-v1.schema.json) fija los nombres, tipos y estados de las respuestas de salud, clima y error. El endpoint integrado devuelve los cinco bloques de clima o un error público conforme al esquema.
 
 | Método y ruta | Comportamiento actual |
 | --- | --- |
 | `GET /api/v1/health/` | HTTP 200 con `{"estado":"ok"}` y `Cache-Control: no-store`. No consulta proveedores ni BD. |
-| `GET /api/v1/clima/?ciudad=Cordoba&pais=AR` | Valida y resuelve la ubicación; puede devolver 400/404/409/429/503. Una ubicación resuelta termina por ahora en 503 hasta integrar clima y recomendación. |
+| `GET /api/v1/clima/?ciudad=Cordoba&pais=AR` | Devuelve 200 con los cinco bloques si hay clima actual válido, o 400/404/409/429/503 según la causa. Puede requerir `region` para resolver ambigüedad. |
 
 Las rutas se consumen con la barra final. El health es una prueba de vida de Django, no de disponibilidad de OpenWeather/Groq ni de validez de sus credenciales.
 
@@ -185,7 +187,7 @@ POST, PUT, PATCH, DELETE, TRACE, HEAD y OPTIONS directo no están admitidos y de
 }
 ```
 
-Con clima actual válido y falla de Groq se propone HTTP 200 con `recomendacion.estado = no_disponible` y `texto = null`. Si falla solo el pronóstico, se mantendrá el clima y se informará ese bloque como no disponible. Si no hay clima actual válido, no se pedirá a Groq un consejo meteorológico.
+Con clima actual válido y falla de Groq se devuelve HTTP 200 con `recomendacion.estado = no_disponible` y `texto = null`. Si falla el pronóstico, se mantiene el clima y ese bloque lleva `estado = no_disponible` e `intervalos = []`. Pueden fallar ambos bloques y conservarse el HTTP 200. Si no hay clima actual válido, no se consulta a Groq.
 
 ### Ejemplos para preparar Angular
 
@@ -194,6 +196,12 @@ Con clima actual válido y falla de Groq se propone HTTP 200 con `recomendacion.
 - [Clima con recomendación no disponible](api/contracts/examples/partial.json)
 - [Entrada inválida](api/contracts/examples/invalid.json)
 - [Ciudad ambigua](api/contracts/examples/ambiguous.json)
+- [Pronóstico no disponible](api/contracts/examples/forecast-unavailable.json)
+- [Pronóstico y recomendación no disponibles](api/contracts/examples/both-unavailable.json)
+- [Ciudad no encontrada](api/contracts/examples/not-found.json)
+- [Clima no disponible](api/contracts/examples/weather-unavailable.json)
+- [Límite del proveedor](api/contracts/examples/rate-limited.json)
+- [Método no permitido](api/contracts/examples/method-not-allowed.json)
 
 Todos los ejemplos de clima, fechas, coordenadas y mensajes son fixtures ficticios para probar la estructura JSON. No son observaciones meteorológicas ni resultados reales de OpenWeather/Groq. El endpoint de TK03 no devuelve los ejemplos de éxito como si fueran datos reales.
 
@@ -203,7 +211,7 @@ Para probar la salud local desde PowerShell:
 Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/health/'
 ```
 
-Consultar clima sin `ciudad` permite comprobar el 400. Consultar `http://127.0.0.1:8000/api/v1/clima/?ciudad=Cordoba&pais=AR` ejecuta geocodificación si hay clave configurada y termina en el estado correspondiente; aun resolviendo una ubicación, el clima completo no está disponible todavía. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
+Consultar clima sin `ciudad` permite comprobar el 400 sin proveedores. Una consulta válida ejecuta los servicios configurados: requiere `OPENWEATHER_API_KEY` para obtener ubicación y clima reales. Sin esa clave responde 503. Si obtiene clima pero falta clave/modelo de Groq, responde 200 con recomendación no disponible. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
 
 ## Resolución de ciudades de TK04
 
@@ -230,7 +238,7 @@ El cuerpo externo se limita a 256 KiB y cinco resultados. Los timeouts de conexi
 
 Para usar geocodificación real, colocar la clave únicamente en `OPENWEATHER_API_KEY` del `.env` del backend y reiniciar Django. No ponerla en la URL pública de esta API ni en Angular. Los timeouts nuevos tienen valores por defecto aunque el `.env` existente no los incluya; el archivo privado no se sobrescribe.
 
-La comprobación de TK04 usó mocks y un servidor HTTP local con proveedor simulado. No requirió API keys reales ni consumió consultas externas. Las respuestas meteorológicas completas siguen pendientes de TK05–TK07.
+La comprobación de TK04 usó mocks y un servidor HTTP local con proveedor simulado. No requirió API keys reales ni consumió consultas externas. TK07 integra actualmente las respuestas meteorológicas completas.
 
 ## Clima actual y pronóstico de TK05
 
@@ -301,7 +309,25 @@ Timeouts, errores de red, HTTP 401/403/429/5xx, respuestas vacías o inválidas 
 
 Para usar el servicio con una cuenta real, completar `GROQ_API_KEY` y `GROQ_MODEL` en el `.env` privado del backend con un modelo de chat habilitado que admita los parámetros enviados. No colocar esas variables en Angular. La [guía de inicio de Groq](https://console.groq.com/docs/quickstart) explica la configuración de la cuenta.
 
-No se seleccionó un modelo ni se modificó tu `.env` real. La verificación usa el SDK instalado con `httpx.MockTransport`: ninguna llamada sale a Groq ni consume saldo. La integración HTTP pública continúa en TK07.
+No se seleccionó un modelo ni se modificó tu `.env` real. La verificación usa el SDK instalado con `httpx.MockTransport`: ninguna llamada sale a Groq ni consume saldo. TK07 integra este servicio en el endpoint público.
+
+## Integración del endpoint de TK07
+
+`query_climate()` encadena validación, resolución de ubicación, clima actual, pronóstico y recomendación. La validación HTTP ocurre antes de llamar a los servicios. Si falla la ubicación no se consulta clima; si falla el clima actual no se consulta pronóstico ni Groq. Cada consulta mantiene sus propios datos, sin historial ni persistencia.
+
+| Resultado | HTTP y contenido |
+| --- | --- |
+| Clima, pronóstico e IA válidos | 200 con los cinco bloques; ambos estados `disponible`. |
+| Falla del pronóstico | 200, pronóstico `no_disponible` con lista vacía. Groq puede responder usando solo el clima actual. |
+| Falla o configuración ausente de Groq | 200, recomendación `no_disponible` con texto null. |
+| Fallan pronóstico y Groq | 200 con ambos bloques no disponibles y el clima actual conservado. |
+| Ubicación ausente o ambigua | 404 o 409; el segundo incluye candidatos para precisar la consulta. |
+| Límite que impide resolver ubicación o clima actual | 429 con error público. |
+| Ubicación o clima actual no disponibles | 503 con error público, sin fabricar mediciones. |
+
+`meta.consultado_en_utc` registra el inicio de la consulta; `actual.fecha_utc` conserva la fecha de la medición del proveedor. Las coordenadas resueltas se usan para clima y pronóstico de la misma consulta. Las respuestas exitosas llevan `Cache-Control: no-store`. No se devuelven claves, prompts ni cuerpos privados de error.
+
+Para frontend TK05, consumir `/api/v1/clima/` con `ciudad`, código `pais` de dos letras y `region` opcional. Adaptar los tipos a los cinco bloques del contrato y representar por separado los estados de pronóstico e IA. Ante 409, usar los candidatos para precisar país/región; ante 400, mostrar los errores de entrada. Los ejemplos versionados permiten preparar esas vistas sin consultar proveedores. CORS local admite los orígenes Angular de localhost y 127.0.0.1 en el puerto 4200. El frontend permanece sin cambios en esta tarea.
 
 ## Coordinación con el frontend
 
@@ -329,7 +355,7 @@ Milestone propuesto: **Backend — Primer incremento**. Tendrá exactamente las 
 | TK04 | Resolver ciudades con OpenWeather | TK03 | M | CP04, CP05 | Implementación local verificada con proveedor simulado; evidencia al final. |
 | TK05 | Consultar y normalizar clima actual y pronóstico | TK04 | M | CP06, CP07, CP10 | Servicios verificados con proveedor simulado; evidencia al final. |
 | TK06 | Generar recomendaciones con Groq | TK05 | M | CP08, CP09 | Servicio verificado con SDK y transporte simulado; evidencia al final. |
-| TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Pendiente |
+| TK07 | Integrar el endpoint de clima inteligente | TK03, TK05, TK06 | M | CP09, CP10, CP11 | Implementación local verificada con proveedores simulados; evidencia al final. |
 | TK08 | Ejecutar pruebas del backend y del contrato | TK07 | M | CP01–CP11, CP15 | Pendiente |
 | TK09 | Preparar seguridad y configuración de producción | TK08 | M | CP12, CP13 | Pendiente |
 | TK10 | Publicar Django en Render y validar la integración | TK09 y acceso a las cuentas de los proveedores | M | CP12, CP13, CP14, CP15 | Pendiente |
@@ -357,7 +383,7 @@ Producción tendrá DEBUG desactivado, hosts y orígenes concretos, destinos ext
 ## Decisiones pendientes
 
 - Servidor y comando final de producción en Render: TK10. La base local usa Python 3.14.3, Django 5.2.18 y los módulos `config.wsgi`/`config.asgi`.
-- Componer la respuesta completa en TK07 usando la ubicación de TK04 y los servicios meteorológicos de TK05; adaptar el formulario y tipos al iniciar frontend TK05.
+- Ampliar la revisión integral en backend TK08; adaptar el formulario y tipos al iniciar frontend TK05 usando el endpoint integrado de TK07.
 - Verificar en la cuenta la disponibilidad de los productos de clima actual y pronóstico de cinco días preparados en TK05 antes de validar con datos reales.
 - Seleccionar en la cuenta un modelo de Groq habilitado y validar sus permisos y compatibilidad con la petición. TK06 ya fija límites de salida, timeouts por operación y cero reintentos; el presupuesto global se revisará en TK09.
 - Fechas del incremento, URL de Render y origen final de Vercel: pendientes.
@@ -431,3 +457,16 @@ No se usó una cuenta real de OpenWeather, no se hicieron consultas externas ni 
 - `manage.py check` y `pip check` sin incidencias. No se probaron permisos, cuotas ni calidad de un modelo real; esa validación queda para la integración con las cuentas reales.
 
 El `.env` privado y el frontend se conservaron sin cambios. No se realizaron consultas externas ni se creó BD, migración, endpoint nuevo, commit, PR o despliegue. TK07 compondrá los servicios de ubicación, clima y recomendación en la respuesta HTTP completa.
+
+## Evidencia local de TK07
+
+24 de octubre de 2026. Windows, Python 3.14.3, Django 5.2.18, groq 1.7.0 y HTTPX 0.28.1.
+
+- CP09: el endpoint conserva HTTP 200 y las mediciones ante límite, error, timeout, texto vacío o truncado de Groq. Sin clave/modelo no intenta consultar la IA.
+- CP10: una falla del pronóstico permite responder con clima actual y consejo; la falla de ambos bloques conserva el clima. Una falla del clima actual devuelve 429/503 y detiene pronóstico y Groq.
+- CP11: integración conforme al esquema v1 con los cinco bloques, coordenadas consistentes, fechas UTC, unidades, valores cero/negativos y ausencias null. Consultas sucesivas conservan sus propios datos. Entrada inválida, health y métodos no admitidos no llaman a proveedores.
+- 129 pruebas aprobadas sin BD ni red externa. Los once ejemplos versionados cubren éxito, respuestas parciales, salud y errores.
+- Recorrido por HTTP mediante WSGI local y transportes simulados: éxito y las tres combinaciones parciales devuelven 200; falta de clima actual devuelve 503 y ambigüedad 409. Comprobados JSON Schema, CORS para Angular y `Cache-Control: no-store` en respuestas exitosas.
+- `manage.py check`, `pip check` y `git diff --check` sin incidencias.
+
+No se verificaron cuentas, cuotas, permisos ni calidad de un modelo real. El frontend y el `.env` privado se conservaron sin cambios. No se creó BD, migración, commit, PR ni despliegue. Backend TK08 queda pendiente para la revisión integral prevista.

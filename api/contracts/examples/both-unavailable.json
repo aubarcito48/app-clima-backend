@@ -1,0 +1,36 @@
+{
+  "ubicacion": {
+    "nombre": "Córdoba",
+    "pais": "AR",
+    "region": "Córdoba",
+    "latitud": -31.42,
+    "longitud": -64.18,
+    "desplazamiento_horario_segundos": -10800
+  },
+  "actual": {
+    "fecha_utc": "2026-10-24T17:00:00Z",
+    "temperatura_c": 24,
+    "sensacion_c": 25,
+    "humedad_pct": 48,
+    "viento_kmh": 12,
+    "descripcion": "Algo nublado"
+  },
+  "pronostico": {
+    "estado": "no_disponible",
+    "intervalos": []
+  },
+  "recomendacion": {
+    "estado": "no_disponible",
+    "texto": null
+  },
+  "meta": {
+    "fuente_meteorologica": "OpenWeather",
+    "consultado_en_utc": "2026-10-24T17:01:00Z",
+    "unidades": {
+      "temperatura": "°C",
+      "viento": "km/h",
+      "humedad": "%",
+      "fecha": "UTC"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Respuestas de App Clima API v1",
-  "description": "Contrato de health, clima y errores. Los ejemplos de clima son ficticios; TK03 no consulta proveedores.",
+  "description": "Contrato v1 de health, clima completo o parcial y errores. Los ejemplos versionados son ficticios, no observaciones reales.",
   "oneOf": [
     {
       "$ref": "#/$defs/salud"

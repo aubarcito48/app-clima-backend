@@ -1,0 +1,4 @@
+{
+  "codigo": "LIMITE_ALCANZADO",
+  "mensaje": "Se alcanzó el límite de consultas meteorológicas. Intentá más tarde."
+}

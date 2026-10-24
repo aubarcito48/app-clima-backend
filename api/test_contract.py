@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from .responses import json_response
 from .validation import ClimateQuery, ClimateQueryForm
 from .services.geocoding import GeoLocation
+from .services.weather import WeatherSnapshot
 
 
 CONTRACTS = Path(__file__).with_name("contracts")
@@ -34,11 +35,19 @@ def valid_datetime(value):
 class ApiEntryTests(SimpleTestCase):
     def setUp(self):
         resolver = patch(
-            "api.views.resolve_location",
+            "api.services.climate.resolve_location",
             return_value=GeoLocation("Córdoba", "AR", "Córdoba", -31.42, -64.18),
         )
         self.resolver = resolver.start()
         self.addCleanup(resolver.stop)
+        example = read_json(CONTRACTS / "examples" / "success.json")
+        for target, value in [
+            ("api.services.climate.fetch_weather", WeatherSnapshot(example["ubicacion"], example["actual"], example["pronostico"])),
+            ("api.services.climate.generate_recommendation", {"estado": "no_disponible", "texto": None}),
+        ]:
+            mock = patch(target, return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
         # Si un endpoint intenta acceder a red o BD, la prueba falla.
         for target in (
             "socket.create_connection", "socket.socket.connect",
@@ -84,7 +93,7 @@ class ApiEntryTests(SimpleTestCase):
                 response = self.client.get("/api/v1/clima/", params)
                 self.assertIn(field, self.assert_contract(response, 400, "ENTRADA_INVALIDA")["errores"])
                 params[field] = "  " + "x" * 100 + "  "
-                self.assert_contract(self.client.get("/api/v1/clima/", params), 503, "SERVICIO_NO_DISPONIBLE")
+                self.assert_contract(self.client.get("/api/v1/clima/", params), 200)
 
     def test_country_must_be_two_ascii_letters_when_provided(self):
         for country in ["Argentina", "A", "123", "A1", "ÁR", "ß", "A R"]:
@@ -95,7 +104,7 @@ class ApiEntryTests(SimpleTestCase):
                 )
                 self.assertIn("pais", payload["errores"])
 
-    def test_valid_queries_return_an_honest_503_until_provider_integration(self):
+    def test_valid_queries_return_full_contract_with_simulated_providers(self):
         for params in [
             {"ciudad": "Mendoza"},
             {"ciudad": "  Córdoba  ", "pais": " ar ", "region": "  Córdoba  "},
@@ -103,9 +112,9 @@ class ApiEntryTests(SimpleTestCase):
         ]:
             with self.subTest(params=params):
                 payload = self.assert_contract(
-                    self.client.get("/api/v1/clima/", params), 503, "SERVICIO_NO_DISPONIBLE"
+                    self.client.get("/api/v1/clima/", params), 200
                 )
-                self.assertEqual(set(payload), {"codigo", "mensaje"})
+                self.assertEqual(set(payload), {"ubicacion", "actual", "pronostico", "recomendacion", "meta"})
 
     def test_repeated_and_unknown_parameters_are_rejected(self):
         for query, field in [

@@ -17,6 +17,7 @@ from .services.geocoding import (
     OpenWeatherGeocoding, resolve_location,
 )
 from .validation import ClimateQuery
+from .services.weather import WeatherSnapshot
 
 
 FIRST = {"name": "Cordoba", "local_names": {"es": "Córdoba"}, "country": "AR", "state": "Córdoba", "lat": -31.42, "lon": -64.18}
@@ -211,6 +212,14 @@ class GeocodingEndpointTests(IsolatedGeocodingTests):
         super().setUp()
         schema = Path(__file__).with_name("contracts") / "response-v1.schema.json"
         self.validator = Draft202012Validator(json.loads(schema.read_text(encoding="utf-8")))
+        example = json.loads((schema.parent / "examples" / "success.json").read_text(encoding="utf-8"))
+        for target, value in [
+            ("api.services.climate.fetch_weather", WeatherSnapshot(example["ubicacion"], example["actual"], example["pronostico"])),
+            ("api.services.climate.generate_recommendation", {"estado": "no_disponible", "texto": None}),
+        ]:
+            mock = patch(target, return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
 
     def request_with_rows(self, rows, params=None):
         with patch("api.services.geocoding.OpenWeatherGeocoding.search", return_value=rows) as search:
@@ -232,14 +241,15 @@ class GeocodingEndpointTests(IsolatedGeocodingTests):
         self.assertEqual(len(response.json()["candidatos"]), 2)
         self.assertNotIn("PRIVATE-UPSTREAM-DATA", response.content.decode())
 
-    def test_refined_query_resolves_location_but_does_not_pretend_to_return_weather(self):
+    def test_refined_query_resolves_location_for_simulated_weather_response(self):
         response = self.request_with_rows([deepcopy(FIRST), deepcopy(SECOND)], {"ciudad": "Córdoba", "pais": "AR", "region": "Córdoba"})
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(set(response.json()), {"codigo", "mensaje"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ubicacion"]["pais"], "AR")
+        self.assertEqual(response.json()["recomendacion"], {"estado": "no_disponible", "texto": None})
 
     def test_provider_rate_limit_and_failure_use_the_agreed_http_contract(self):
         for failure in [GeocodingRateLimited(), GeocodingFailure()]:
-            with self.subTest(code=failure.code), patch("api.views.resolve_location", side_effect=failure):
+            with self.subTest(code=failure.code), patch("api.services.climate.resolve_location", side_effect=failure):
                 response = self.client.get("/api/v1/clima/", {"ciudad": "Córdoba"})
                 self.assertEqual(response.status_code, failure.status)
                 self.assertEqual(response.json()["codigo"], failure.code)

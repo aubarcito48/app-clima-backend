@@ -1,8 +1,10 @@
-"""Entrada HTTP. La integración con proveedores comienza en las tareas siguientes."""
+"""Entrada HTTP del contrato v1 con errores públicos y disponibilidad parcial."""
 
 from .responses import error_response, get_only, json_response
 from .validation import ClimateQueryForm
-from .services.geocoding import AmbiguousLocation, GeocodingFailure, resolve_location
+from .services.climate import query_climate
+from .services.geocoding import AmbiguousLocation, GeocodingFailure
+from .services.weather import WeatherFailure
 
 
 @get_only
@@ -25,8 +27,7 @@ def climate(request):
         )
 
     try:
-        # La ubicación resuelta se usará para consultar el clima en TK05–TK07.
-        resolve_location(form.query())
+        payload = query_climate(form.query())
     except GeocodingFailure as failure:
         candidates = (
             [location.as_candidate() for location in failure.candidates]
@@ -35,10 +36,9 @@ def climate(request):
         return error_response(
             failure.code, failure.message, status=failure.status, candidates=candidates
         )
+    except WeatherFailure as failure:
+        return error_response(failure.code, failure.message, status=failure.status)
 
-    # Resolver una ubicación todavía no entrega clima ni recomendaciones.
-    return error_response(
-        "SERVICIO_NO_DISPONIBLE",
-        "El servicio de clima todavía no está disponible. Intentá más tarde.",
-        status=503,
-    )
+    response = json_response(payload)
+    response["Cache-Control"] = "no-store"
+    return response
