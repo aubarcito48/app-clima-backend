@@ -202,6 +202,20 @@ class CurrentNormalizationTests(IsolatedWeatherTests):
 
 
 class ForecastNormalizationTests(IsolatedWeatherTests):
+    def test_wind_direction_preserves_north_and_is_optional_for_both_sources(self):
+        self.assertEqual(normalize_current({**CURRENT, "wind": {"speed": 2, "deg": 0}}).actual["direccion_viento_grados"], 0)
+        data = deepcopy(FORECAST)
+        data["list"][0]["wind"] = {"speed": 2, "deg": 360}
+        rows = normalize_forecast(data)["intervalos"]
+        self.assertEqual(rows[1]["direccion_viento_grados"], 360)
+        self.assertNotIn("direccion_viento_grados", rows[0])
+        for value in (-1, 361, True, "90", float("nan")):
+            with self.subTest(value=value), self.assertRaises(WeatherFailure):
+                normalize_current({**CURRENT, "wind": {"deg": value}})
+            data["list"][0]["wind"]["deg"] = value
+            with self.subTest(forecast=value), self.assertRaises(WeatherFailure):
+                normalize_forecast(data)
+
     def test_interval_wind_is_converted_once_to_kmh_including_zero(self):
         data = deepcopy(FORECAST)
         data["list"][0]["wind"] = {"speed": 1.23456}

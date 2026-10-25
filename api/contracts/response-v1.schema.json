@@ -171,6 +171,14 @@
             "null"
           ],
           "pattern": "^(01|02|03|04|09|10|11|13|50)[dn]$"
+        },
+        "direccion_viento_grados": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 360
         }
       },
       "required": [
@@ -219,6 +227,14 @@
             "null"
           ],
           "minimum": 0
+        },
+        "direccion_viento_grados": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 360
         }
       },
       "required": [

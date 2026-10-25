@@ -132,6 +132,8 @@ def normalize_current(payload):
             "sensacion_c": _number(main.get("feels_like"), optional=True),
             "humedad_pct": _number(main.get("humidity"), optional=True, minimum=0, maximum=100),
             "viento_kmh": wind_kmh,
+            **({"direccion_viento_grados": _number(wind["deg"], minimum=0, maximum=360)}
+               if wind and wind.get("deg") is not None else {}),
             "descripcion": _description(payload.get("weather")),
             **solar_fields,
             **_weather_icon(payload.get("weather")),
@@ -169,6 +171,8 @@ def normalize_forecast(payload):
             "descripcion": _description(row.get("weather")),
             **_weather_icon(row.get("weather")),
             **({"viento_kmh": _number(round(speed * 3.6, 3), minimum=0)} if speed is not None else {}),
+            **({"direccion_viento_grados": _number(wind["deg"], minimum=0, maximum=360)}
+               if wind and wind.get("deg") is not None else {}),
             **({"precipitacion_pct": round(_number(row["pop"], minimum=0, maximum=1) * 100, 2)}
                if row.get("pop") is not None else {}),
         })
