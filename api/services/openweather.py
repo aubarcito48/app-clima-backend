@@ -8,7 +8,7 @@ from django.conf import settings
 
 
 OPENWEATHER_HOST = "api.openweathermap.org"
-ALLOWED_PATHS = frozenset({"/geo/1.0/direct", "/data/2.5/weather", "/data/2.5/forecast"})
+ALLOWED_PATHS = frozenset({"/geo/1.0/direct", "/geo/1.0/reverse", "/data/2.5/weather", "/data/2.5/forecast"})
 MAX_RESPONSE_BYTES = 256 * 1024
 
 

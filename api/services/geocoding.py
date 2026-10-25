@@ -131,6 +131,24 @@ def _region_key(value):
     )
 
 
+def resolve_coordinates(query):
+    try:
+        payload = request_json("/geo/1.0/reverse", {
+            "lat": query.latitud, "lon": query.longitud, "limit": 1,
+        })
+    except OpenWeatherRateLimited:
+        raise GeocodingRateLimited() from None
+    except OpenWeatherUnavailable:
+        raise GeocodingFailure() from None
+    if not isinstance(payload, list) or len(payload) > 1:
+        raise GeocodingFailure()
+    if not payload:
+        raise LocationNotFound()
+    place = _parse_location(payload[0])
+    # El nombre es de la localidad próxima; el clima usa el punto solicitado.
+    return GeoLocation(place.nombre, place.pais, place.region, query.latitud, query.longitud)
+
+
 def resolve_location(query: ClimateQuery, *, client=None):
     payload = (client if client is not None else OpenWeatherGeocoding()).search(query)
     if not isinstance(payload, list) or len(payload) > RESULT_LIMIT:

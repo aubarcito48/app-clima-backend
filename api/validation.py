@@ -14,6 +14,12 @@ class ClimateQuery:
     region: str | None = None
 
 
+@dataclass(frozen=True)
+class CoordinatesQuery:
+    latitud: float
+    longitud: float
+
+
 class NormalizedTextField(forms.CharField):
     def to_python(self, value):
         text = unicodedata.normalize("NFC", " ".join(super().to_python(value).split()))
@@ -24,6 +30,7 @@ class NormalizedTextField(forms.CharField):
 
 class ClimateQueryForm(forms.Form):
     ciudad = NormalizedTextField(
+        required=False,
         max_length=100,
         error_messages={
             "required": "La ciudad es obligatoria y no puede contener solo espacios.",
@@ -40,6 +47,8 @@ class ClimateQueryForm(forms.Form):
         max_length=100,
         error_messages={"max_length": "La región admite hasta 100 caracteres."},
     )
+    latitud = forms.FloatField(required=False, min_value=-90, max_value=90)
+    longitud = forms.FloatField(required=False, min_value=-180, max_value=180)
 
     def clean_pais(self):
         country = self.cleaned_data["pais"]
@@ -49,8 +58,17 @@ class ClimateQueryForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
+        coordinates = any(name in self.data for name in ("latitud", "longitud"))
+        if coordinates:
+            for name in ("latitud", "longitud"):
+                if cleaned.get(name) is None and name not in self.errors:
+                    self.add_error(name, "Enviá latitud y longitud válidas juntas.")
+            if any(cleaned.get(name) for name in ("ciudad", "pais", "region")):
+                self.add_error(None, "Usá un nombre de lugar o coordenadas, sin mezclarlos.")
+        elif not cleaned.get("ciudad") and "ciudad" not in self.errors:
+            self.add_error("ciudad", "La ciudad es obligatoria y no puede contener solo espacios.")
         if any(name not in self.fields for name in self.data):
-            self.add_error(None, "Solo se admiten los parámetros ciudad, pais y region.")
+            self.add_error(None, "Solo se admiten ciudad, pais, region, latitud y longitud.")
         if hasattr(self.data, "getlist"):
             for name in self.fields:
                 if len(self.data.getlist(name)) > 1:
@@ -60,6 +78,8 @@ class ClimateQueryForm(forms.Form):
     def query(self):
         if not self.is_valid():
             raise ValueError("No se puede construir una consulta con parámetros inválidos.")
+        if self.cleaned_data.get("latitud") is not None:
+            return CoordinatesQuery(self.cleaned_data["latitud"], self.cleaned_data["longitud"])
         return ClimateQuery(
             ciudad=self.cleaned_data["ciudad"],
             pais=self.cleaned_data["pais"] or None,

@@ -14,7 +14,7 @@ La numeración TK01–TK10 de este repositorio es independiente de la del fronte
 
 ## Alcance
 
-- Recibir una ciudad obligatoria y filtros opcionales de país o región.
+- Recibir un nombre de lugar con filtros opcionales, o un par de coordenadas para ubicación actual.
 - Resolver ubicación y coordenadas, diferenciando ausencia y ambigüedad.
 - Consultar clima actual y los intervalos de pronóstico realmente disponibles.
 - Normalizar unidades y fechas, conservando valores ausentes sin inventar datos.
@@ -146,7 +146,7 @@ Las rutas se consumen con la barra final. El health es una prueba de vida de Dja
 
 | Parámetro | Reglas |
 | --- | --- |
-| `ciudad` | Obligatoria, entre 1 y 100 caracteres después de normalizar espacios y Unicode NFC. Admite acentos y nombres compuestos. |
+| `ciudad` | Obligatoria al buscar por nombre, entre 1 y 100 caracteres después de normalizar espacios y Unicode NFC. Se omite al buscar por coordenadas. |
 | `pais` | Opcional. Código de dos letras ASCII, por ejemplo AR, ES o ST. Se convierte a mayúsculas; se valida su formato, no su pertenencia al catálogo de países. Un nombre como Argentina es inválido. |
 | `region` | Opcional, hasta 100 caracteres después de normalizar. Permite precisar coincidencias dentro de un país. |
 
@@ -184,7 +184,7 @@ Un pronóstico `disponible` tendrá al menos un intervalo. Si está `no_disponib
 | 503 | `SERVICIO_NO_DISPONIBLE` | Geocodificación o clima temporalmente no disponibles. |
 | 500 | `SERVICIO_NO_DISPONIBLE` | Error inesperado con DEBUG desactivado; JSON público sin excepción ni traza. |
 
-Los errores tendrán `codigo` y `mensaje`. El 400 incluirá `errores` con listas de mensajes por `ciudad`, `pais`, `region` o `consulta`. El 409 incluye al menos dos `candidatos`, cada uno con nombre, país, región nullable, latitud y longitud. No se reflejan valores privados ni cuerpos internos de proveedores.
+Los errores tendrán `codigo` y `mensaje`. El 400 incluirá `errores` con listas de mensajes por `ciudad`, `pais`, `region`, `latitud`, `longitud` o `consulta`. El 409 incluye al menos dos `candidatos`, cada uno con nombre, país, región nullable, latitud y longitud. No se reflejan valores privados ni cuerpos internos de proveedores.
 
 POST, PUT, PATCH, DELETE, TRACE, HEAD y OPTIONS directo no están admitidos y devuelven 405 con `Allow: GET`. El cuerpo es JSON, excepto HEAD, que no lleva cuerpo según su semántica HTTP. Un preflight CORS OPTIONS autorizado lo resuelve el middleware con 200 antes de la vista; no es una consulta meteorológica.
 
@@ -223,6 +223,16 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/health/'
 ```
 
 Consultar clima sin `ciudad` permite comprobar el 400 sin proveedores. Una consulta válida ejecuta los servicios configurados: requiere `OPENWEATHER_API_KEY` para obtener ubicación y clima reales. Sin esa clave responde 503. Si obtiene clima pero falta clave/modelo de Groq, responde 200 con recomendación no disponible. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
+
+## Ubicación actual por coordenadas
+
+Ajuste posterior a TK09, solicitado para «Usar mi ubicación» en Angular. `GET /api/v1/clima/?latitud=-31.42&longitud=-64.18` acepta un par de coordenadas como alternativa al nombre de lugar. Latitud entre −90 y 90, longitud entre −180 y 180; ambos valores deben ser finitos y se admite cero. Se rechazan valores incompletos, repetidos o mezclados con ciudad/país/región antes de llamar a proveedores. El error 400 puede incluir `errores.latitud` y `errores.longitud`.
+
+El servicio usa HTTPS, host fijo y `/geo/1.0/reverse` de OpenWeather, con `limit=1`, timeouts y cero reintentos del transporte existente. La respuesta se valida y solo proporciona el nombre/país/región de una localidad próxima; clima y pronóstico conservan el punto solicitado, sin reemplazarlo por el centro de esa localidad. No se inventa ubicación si falta un resultado válido. Los errores 404/429/503 y los estados parciales conservan el comportamiento del endpoint por nombre.
+
+El frontend pide permiso únicamente al pulsar su botón, no al iniciar la página. Las claves siguen en Django y no se agregó persistencia. Cada consulta por coordenadas usa hasta tres peticiones de OpenWeather (inversa, clima, pronóstico) y una de Groq, con los mismos límites y ausencia de cuota global ya documentados. Los logs del hosting deben seguir configurados sin query strings para no registrar coordenadas. Referencia: [geocodificación inversa de OpenWeather](https://openweathermap.org/api/geocoding-api#reverse).
+
+Verificación local del 24 de octubre de 2026: **145 pruebas aprobadas** con `scripts/test_backend.py`. Cinco casos nuevos cubren ceros/límites, errores de entrada sin proveedores, HTTP integrado conservando las coordenadas originales, fallas controladas de geocodificación y transporte HTTPS fijo con clave ficticia. Sin cuentas ni peticiones externas, BD, cambios al `.env`, commit o despliegue. Los documentos originales de tareas no se modificaron.
 
 ## Resolución de ciudades de TK04
 

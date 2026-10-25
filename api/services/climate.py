@@ -2,14 +2,15 @@
 
 from django.utils import timezone
 
-from .geocoding import resolve_location
+from .geocoding import resolve_location, resolve_coordinates
+from api.validation import CoordinatesQuery
 from .recommendations import generate_recommendation
 from .weather import fetch_weather
 
 
 def query_climate(query):
     consulted_at = timezone.now()
-    location = resolve_location(query)
+    location = resolve_coordinates(query) if isinstance(query, CoordinatesQuery) else resolve_location(query)
     snapshot = fetch_weather(location)
     recommendation = generate_recommendation(snapshot)
     return {
