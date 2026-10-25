@@ -1,7 +1,8 @@
 """Entrada HTTP del contrato v1 con errores públicos y disponibilidad parcial."""
 
 from .responses import error_response, get_only, json_response
-from .validation import ClimateQueryForm, PlaceSearchForm
+from .validation import ClimateQueryForm, PlaceSearchForm, AlertsQueryForm
+from .services.alerts import query_alerts
 from .services.places import search_places
 from .services.climate import query_climate
 from .services.geocoding import AmbiguousLocation, GeocodingFailure
@@ -21,6 +22,18 @@ def health(request):
     # Liveness de la aplicación: no prueba proveedores, credenciales ni BD.
     response = json_response({"estado": "ok"})
     response["Cache-Control"] = "no-store"
+    return response
+
+
+@get_only
+def alerts(request):
+    form = AlertsQueryForm(request.GET)
+    if not form.is_valid():
+        response = error_response('ENTRADA_INVALIDA', 'Enviá latitud, longitud y país válidos, una sola vez.', status=400)
+    else:
+        data = form.cleaned_data
+        response = json_response(query_alerts(data['latitud'], data['longitud'], data['pais'].upper()))
+    response['Cache-Control'] = 'no-store'
     return response
 
 

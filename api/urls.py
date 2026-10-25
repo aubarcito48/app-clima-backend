@@ -9,4 +9,5 @@ urlpatterns = [
     path("health/", views.health, name="health"),
     path("clima/", views.climate, name="climate"),
     path("lugares/", views.places, name="places"),
+    path("alertas/", views.alerts, name="alerts"),
 ]
