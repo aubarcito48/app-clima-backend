@@ -160,6 +160,16 @@ class RecommendationGenerationTests(SimpleTestCase):
                 self.assert_unavailable(generate_recommendation(weather_snapshot()))
                 constructor.assert_not_called()
 
+    @override_settings(GROQ_MODEL="openai/gpt-oss-20b")
+    def test_gpt_oss_reserves_reasoning_budget_without_exposing_reasoning(self):
+        result = self.generate()
+        self.assertEqual(result["estado"], "disponible")
+        body = json.loads(self.requests[0].content)
+        self.assertEqual(body["model"], "openai/gpt-oss-20b")
+        self.assertEqual(body["max_completion_tokens"], 1024)
+        self.assertEqual(body["reasoning_effort"], "low")
+        self.assertFalse(body["include_reasoning"])
+
     def test_sdk_configuration_uses_fixed_destination_and_disables_automatic_retries(self):
         with patch.dict(os.environ, {"GROQ_BASE_URL": "https://not-allowed.example", "HTTPS_PROXY": "http://not-allowed.example:9999"}):
             result = self.generate()

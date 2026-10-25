@@ -152,10 +152,18 @@ def generate_recommendation(snapshot: WeatherSnapshot, *, transport=None):
                 api_key=key, base_url=GROQ_BASE_URL, http_client=http_client,
                 timeout=timeout, max_retries=0,
             ) as client:
+                # GPT-OSS shares the completion budget with reasoning. Keep a
+                # bounded reserve so the final short advice is not truncated.
+                reasoning_options = {}
+                token_limit = settings.GROQ_MAX_COMPLETION_TOKENS
+                if model in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
+                    reasoning_options = {"reasoning_effort": "low", "include_reasoning": False}
+                    token_limit = max(token_limit, 1024)
                 response = client.chat.completions.create(
                     model=model, messages=messages,
-                    max_completion_tokens=settings.GROQ_MAX_COMPLETION_TOKENS,
+                    max_completion_tokens=token_limit,
                     n=1, stream=False, tool_choice="none",
+                    **reasoning_options,
                 )
         text = _completion_text(response)
         return {"estado": "disponible", "texto": text} if text else _unavailable()
