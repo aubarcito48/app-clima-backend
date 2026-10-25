@@ -1,6 +1,8 @@
 # App Clima Backend
 
-Backend en Python y Django, en preparación para resolver una ciudad, obtener clima y pronóstico de OpenWeather y generar una recomendación en español con Groq. El frontend Angular consumirá una única API JSON del backend.
+Backend en Python y Django para resolver una ciudad, obtener clima y pronóstico de OpenWeather y generar una recomendación con Groq. El frontend Angular consume una única API JSON del backend.
+
+`GET /api/v1/clima/` acepta el parámetro opcional `idioma=es` o `idioma=en`, tanto en consultas por nombre como por coordenadas. Por defecto usa español. El idioma se aplica a las descripciones de OpenWeather y al consejo de Groq; no cambia la estructura del contrato ni requiere credenciales o variables nuevas. Los avisos oficiales del SMN conservan su idioma original.
 
 Repositorio: [aubarcito48/app-clima-backend](https://github.com/aubarcito48/app-clima-backend). Frontend: [aubarcito48/app-clima](https://github.com/aubarcito48/app-clima).
 

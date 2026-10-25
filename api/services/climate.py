@@ -11,8 +11,13 @@ from .weather import fetch_weather
 def query_climate(query):
     consulted_at = timezone.now()
     location = resolve_coordinates(query) if isinstance(query, CoordinatesQuery) else resolve_location(query)
-    snapshot = fetch_weather(location)
-    recommendation = generate_recommendation(snapshot)
+    # Keep Spanish as the default for existing API consumers.
+    if query.idioma == 'en':
+        snapshot = fetch_weather(location, language='en')
+        recommendation = generate_recommendation(snapshot, language='en')
+    else:
+        snapshot = fetch_weather(location)
+        recommendation = generate_recommendation(snapshot)
     return {
         "ubicacion": snapshot.ubicacion,
         "actual": snapshot.actual,

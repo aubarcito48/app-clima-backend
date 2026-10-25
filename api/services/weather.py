@@ -181,13 +181,18 @@ def normalize_forecast(payload):
 
 
 class OpenWeatherMeteorology:
+    def __init__(self, language='es'):
+        if language not in ('es', 'en'):
+            raise ValueError('Unsupported language')
+        self.language = language
+
     def _fetch(self, path, location: GeoLocation):
         # También valida coordenadas si el servicio se llama fuera del geocodificador.
         latitude = _number(location.latitud, minimum=-90, maximum=90)
         longitude = _number(location.longitud, minimum=-180, maximum=180)
         try:
             return request_json(path, {
-                "lat": latitude, "lon": longitude, "units": "metric", "lang": "es",
+                "lat": latitude, "lon": longitude, "units": "metric", "lang": self.language,
             })
         except OpenWeatherRateLimited:
             raise WeatherRateLimited() from None
@@ -201,8 +206,8 @@ class OpenWeatherMeteorology:
         return self._fetch(FORECAST_PATH, location)
 
 
-def fetch_weather(location: GeoLocation, *, client=None):
-    client = client if client is not None else OpenWeatherMeteorology()
+def fetch_weather(location: GeoLocation, *, client=None, language='es'):
+    client = client if client is not None else OpenWeatherMeteorology(language)
     # Si falla el clima actual, se propaga el error y no se pide el pronóstico.
     current = normalize_current(client.current(location))
     try:

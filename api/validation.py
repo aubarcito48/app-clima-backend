@@ -12,12 +12,14 @@ class ClimateQuery:
     ciudad: str
     pais: str | None = None
     region: str | None = None
+    idioma: str = 'es'
 
 
 @dataclass(frozen=True)
 class CoordinatesQuery:
     latitud: float
     longitud: float
+    idioma: str = 'es'
 
 
 class NormalizedTextField(forms.CharField):
@@ -53,6 +55,7 @@ class AlertsQueryForm(forms.Form):
 
 
 class ClimateQueryForm(forms.Form):
+    idioma = forms.ChoiceField(choices=[('es', 'Español'), ('en', 'English')], required=False)
     ciudad = NormalizedTextField(
         required=False,
         max_length=100,
@@ -92,7 +95,7 @@ class ClimateQueryForm(forms.Form):
         elif not cleaned.get("ciudad") and "ciudad" not in self.errors:
             self.add_error("ciudad", "La ciudad es obligatoria y no puede contener solo espacios.")
         if any(name not in self.fields for name in self.data):
-            self.add_error(None, "Solo se admiten ciudad, pais, region, latitud y longitud.")
+            self.add_error(None, "Solo se admiten ciudad, pais, region, latitud, longitud e idioma.")
         if hasattr(self.data, "getlist"):
             for name in self.fields:
                 if len(self.data.getlist(name)) > 1:
@@ -103,11 +106,12 @@ class ClimateQueryForm(forms.Form):
         if not self.is_valid():
             raise ValueError("No se puede construir una consulta con parámetros inválidos.")
         if self.cleaned_data.get("latitud") is not None:
-            return CoordinatesQuery(self.cleaned_data["latitud"], self.cleaned_data["longitud"])
+            return CoordinatesQuery(self.cleaned_data["latitud"], self.cleaned_data["longitud"], self.cleaned_data['idioma'] or 'es')
         return ClimateQuery(
             ciudad=self.cleaned_data["ciudad"],
             pais=self.cleaned_data["pais"] or None,
             region=self.cleaned_data["region"] or None,
+            idioma=self.cleaned_data['idioma'] or 'es',
         )
 
     def public_errors(self):

@@ -51,7 +51,9 @@ def _valid_date(value):
         return False
 
 
-def build_messages(snapshot: WeatherSnapshot):
+def build_messages(snapshot: WeatherSnapshot, *, language='es'):
+    if language not in ('es', 'en'):
+        raise ValueError('Unsupported language')
     if not isinstance(snapshot, WeatherSnapshot):
         raise InvalidRecommendationContext()
     location, current, forecast = snapshot.ubicacion, snapshot.actual, snapshot.pronostico
@@ -104,8 +106,11 @@ def build_messages(snapshot: WeatherSnapshot):
     serialized = json.dumps(context, ensure_ascii=False, allow_nan=False)
     if len(serialized) > MAX_CONTEXT_CHARACTERS:
         raise InvalidRecommendationContext()
+    prompt = SYSTEM_PROMPT
+    if language == 'en':
+        prompt = prompt.replace('en español rioplatense', 'en inglés').replace('consejo breve en español', 'consejo breve en inglés')
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": prompt},
         {"role": "user", "content": serialized},
     ]
 
@@ -132,12 +137,12 @@ def _completion_text(response):
     return text
 
 
-def generate_recommendation(snapshot: WeatherSnapshot, *, transport=None):
+def generate_recommendation(snapshot: WeatherSnapshot, *, transport=None, language='es'):
     key, model = settings.GROQ_API_KEY.strip(), settings.GROQ_MODEL.strip()
     if not key or not model:
         return _unavailable()
     try:
-        messages = build_messages(snapshot)
+        messages = build_messages(snapshot, language=language)
         timeout = httpx.Timeout(
             connect=settings.GROQ_CONNECT_TIMEOUT_SECONDS,
             read=settings.GROQ_READ_TIMEOUT_SECONDS,
