@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sugerencias de lugares v1",
+  "type": "object",
+  "required": ["sugerencias"],
+  "additionalProperties": false,
+  "properties": {
+    "sugerencias": {
+      "type": "array", "maxItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "nombre", "pais", "region", "latitud", "longitud"],
+        "properties": {
+          "id": {"type": "integer", "minimum": 1},
+          "nombre": {"type": "string", "minLength": 1},
+          "pais": {"type": "string", "pattern": "^[A-Z]{2}$"},
+          "region": {"type": ["string", "null"]},
+          "latitud": {"type": "number", "minimum": -90, "maximum": 90},
+          "longitud": {"type": "number", "minimum": -180, "maximum": 180}
+        }
+      }
+    }
+  }
+}

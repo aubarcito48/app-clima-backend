@@ -224,6 +224,16 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/health/'
 
 Consultar clima sin `ciudad` permite comprobar el 400 sin proveedores. Una consulta válida ejecuta los servicios configurados: requiere `OPENWEATHER_API_KEY` para obtener ubicación y clima reales. Sin esa clave responde 503. Si obtiene clima pero falta clave/modelo de Groq, responde 200 con recomendación no disponible. Las validaciones usan [formularios de Django](https://docs.djangoproject.com/en/5.2/ref/forms/validation/) y las vistas devuelven [JsonResponse](https://docs.djangoproject.com/en/5.2/ref/request-response/#jsonresponse-objects).
 
+## Autocompletado de lugares
+
+`GET /api/v1/lugares/?q=Cor` devuelve `{"sugerencias": [...]}` con hasta cinco objetos: `id`, `nombre`, `pais`, `region`, `latitud`, `longitud`. Es un contrato separado, validado en `api/contracts/places-v1.schema.json`; no modifica los cinco bloques de clima. `q` se normaliza y admite de 3 a 206 caracteres. Parámetros desconocidos, repetidos o inválidos devuelven 400 sin proveedor. Una búsqueda sin coincidencias devuelve 200 con lista vacía, y métodos distintos de GET devuelven 405.
+
+Se usa exclusivamente HTTPS con host `geocoding-api.open-meteo.com` y ruta `/v1/search`, parámetros codificados, idioma español y máximo cinco resultados. Un código de país al final de una consulta con comas se envía como `countryCode`. Los datos se validan, se deduplican por ID y se descartan campos privados del proveedor. Conexión 3 s, operaciones de socket 4 s, respuesta hasta 256 KiB, sin redirecciones ni reintentos. Como los demás clientes síncronos, los timeouts no son un plazo global absoluto. El endpoint devuelve errores públicos 429/503 y no registra cuerpos ni excepciones.
+
+Cada consulta válida de sugerencias hace como máximo una llamada de geocodificación: nunca llama a OpenWeather ni Groq. Angular espera 300 ms sin cambios y cancela peticiones anteriores; no hay caché, cuota ni persistencia de sugerencias en Django. La configuración actual usa el endpoint público para desarrollo/no comercial, sin nuevas claves. Antes de un uso comercial se deben revisar las condiciones y la configuración de cliente del proveedor. Datos de lugares atribuidos a Open-Meteo/GeoNames. [API y condiciones de uso](https://open-meteo.com/en/docs/geocoding-api).
+
+Verificado el 24 de octubre de 2026: **150 pruebas de backend aprobadas**, con cinco casos nuevos para sugerencias. Una comprobación del servicio público por el prefijo `Cord` devolvió cinco coincidencias reales; no consumió cuentas ni llamadas de clima/IA. Las pruebas automatizadas usan transporte simulado sin red ni BD. Al retomar el 25 de octubre se reinició Django y se verificó el endpoint HTTP local: 200, cinco sugerencias y CORS autorizado para Angular. Sin cambios en claves, `.env`, dependencias, documentos originales, commit o despliegue.
+
 ## Ubicación actual por coordenadas
 
 Ajuste posterior a TK09, solicitado para «Usar mi ubicación» en Angular. `GET /api/v1/clima/?latitud=-31.42&longitud=-64.18` acepta un par de coordenadas como alternativa al nombre de lugar. Latitud entre −90 y 90, longitud entre −180 y 180; ambos valores deben ser finitos y se admite cero. Se rechazan valores incompletos, repetidos o mezclados con ciudad/país/región antes de llamar a proveedores. El error 400 puede incluir `errores.latitud` y `errores.longitud`.
