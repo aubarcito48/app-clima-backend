@@ -202,6 +202,33 @@ class CurrentNormalizationTests(IsolatedWeatherTests):
 
 
 class ForecastNormalizationTests(IsolatedWeatherTests):
+    def test_optional_solar_times_and_icon_come_from_the_provider(self):
+        data = {**deepcopy(CURRENT), "sys": {"sunrise": 0, "sunset": 43200}, "weather": [{"icon": "01n"}]}
+        result = normalize_current(data).actual
+        self.assertEqual(result["amanecer_utc"], "1970-01-01T00:00:00Z")
+        self.assertEqual(result["atardecer_utc"], "1970-01-01T12:00:00Z")
+        self.assertEqual(result["icono"], "01n")
+        self.assertNotIn("amanecer_utc", normalize_current(CURRENT).actual)
+
+    def test_optional_rain_probability_is_a_percentage_including_zero(self):
+        data = deepcopy(FORECAST)
+        data["list"][0].update(pop=0.2, weather=[{"icon": "10d"}])
+        data["list"][1]["pop"] = 0
+        rows = normalize_forecast(data)["intervalos"]
+        self.assertEqual(rows[0]["precipitacion_pct"], 0)
+        self.assertEqual(rows[1]["precipitacion_pct"], 20)
+        self.assertEqual(rows[1]["icono"], "10d")
+        self.assertNotIn("precipitacion_pct", rows[2])
+
+    def test_invalid_probability_and_solar_timestamp_do_not_become_fake_values(self):
+        for value in (-0.1, 1.1, True, "0.5"):
+            data = deepcopy(FORECAST)
+            data["list"][0]["pop"] = value
+            with self.subTest(value=value), self.assertRaises(WeatherFailure):
+                normalize_forecast(data)
+        with self.assertRaises(WeatherFailure):
+            normalize_current({**CURRENT, "sys": {"sunrise": True}})
+
     def test_forecast_is_sorted_by_utc_timestamp_without_daily_averages(self):
         result = normalize_forecast(deepcopy(FORECAST))
         self.assertEqual(result["estado"], "disponible")

@@ -101,8 +101,22 @@ def _payload(payload):
     return payload
 
 
+def _weather_icon(weather):
+    if not isinstance(weather, list) or not weather or not isinstance(weather[0], dict):
+        return {}
+    value = weather[0].get("icon")
+    allowed = {code + period for code in ("01", "02", "03", "04", "09", "10", "11", "13", "50") for period in ("d", "n")}
+    return {"icono": value} if isinstance(value, str) and value in allowed else {}
+
+
 def normalize_current(payload):
     payload = _payload(payload)
+    solar = payload.get("sys")
+    solar_fields = {}
+    if isinstance(solar, dict):
+        for provider_key, field in (("sunrise", "amanecer_utc"), ("sunset", "atardecer_utc")):
+            if solar.get(provider_key) is not None:
+                solar_fields[field] = _utc_timestamp(solar[provider_key])
     main = payload.get("main")
     if not isinstance(main, dict):
         raise WeatherFailure()
@@ -119,6 +133,8 @@ def normalize_current(payload):
             "humedad_pct": _number(main.get("humidity"), optional=True, minimum=0, maximum=100),
             "viento_kmh": wind_kmh,
             "descripcion": _description(payload.get("weather")),
+            **solar_fields,
+            **_weather_icon(payload.get("weather")),
         },
         desplazamiento_horario_segundos=_timezone_offset(payload.get("timezone")),
     )
@@ -147,6 +163,9 @@ def normalize_forecast(payload):
             "fecha_utc": date,
             "temperatura_c": _number(row["main"].get("temp")),
             "descripcion": _description(row.get("weather")),
+            **_weather_icon(row.get("weather")),
+            **({"precipitacion_pct": round(_number(row["pop"], minimum=0, maximum=1) * 100, 2)}
+               if row.get("pop") is not None else {}),
         })
     intervals.sort(key=lambda interval: datetime.fromisoformat(interval["fecha_utc"]))
     return {"estado": "disponible" if intervals else "no_disponible", "intervalos": intervals}

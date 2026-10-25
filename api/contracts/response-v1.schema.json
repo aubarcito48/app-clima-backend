@@ -150,6 +150,27 @@
             "string",
             "null"
           ]
+        },
+        "amanecer_utc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "atardecer_utc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "icono": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(01|02|03|04|09|10|11|13|50)[dn]$"
         }
       },
       "required": [
@@ -176,6 +197,21 @@
             "string",
             "null"
           ]
+        },
+        "precipitacion_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "icono": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(01|02|03|04|09|10|11|13|50)[dn]$"
         }
       },
       "required": [
