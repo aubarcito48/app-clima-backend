@@ -212,6 +212,13 @@
             "null"
           ],
           "pattern": "^(01|02|03|04|09|10|11|13|50)[dn]$"
+        },
+        "viento_kmh": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
         }
       },
       "required": [

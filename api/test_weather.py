@@ -202,6 +202,22 @@ class CurrentNormalizationTests(IsolatedWeatherTests):
 
 
 class ForecastNormalizationTests(IsolatedWeatherTests):
+    def test_interval_wind_is_converted_once_to_kmh_including_zero(self):
+        data = deepcopy(FORECAST)
+        data["list"][0]["wind"] = {"speed": 1.23456}
+        data["list"][1]["wind"] = {"speed": 0}
+        rows = normalize_forecast(data)["intervalos"]
+        self.assertEqual(rows[0]["viento_kmh"], 0)
+        self.assertEqual(rows[1]["viento_kmh"], 4.444)
+        self.assertNotIn("viento_kmh", rows[2])
+
+    def test_invalid_interval_wind_is_rejected(self):
+        for wind in ([], {"speed": -1}, {"speed": True}, {"speed": float("nan")}):
+            data = deepcopy(FORECAST)
+            data["list"][0]["wind"] = wind
+            with self.subTest(wind=wind), self.assertRaises(WeatherFailure):
+                normalize_forecast(data)
+
     def test_optional_solar_times_and_icon_come_from_the_provider(self):
         data = {**deepcopy(CURRENT), "sys": {"sunrise": 0, "sunset": 43200}, "weather": [{"icon": "01n"}]}
         result = normalize_current(data).actual

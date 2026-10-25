@@ -159,11 +159,16 @@ def normalize_forecast(payload):
         if date in seen:
             raise WeatherFailure()
         seen.add(date)
+        wind = row.get("wind")
+        if wind is not None and not isinstance(wind, dict):
+            raise WeatherFailure()
+        speed = _number(wind.get("speed") if wind else None, optional=True, minimum=0)
         intervals.append({
             "fecha_utc": date,
             "temperatura_c": _number(row["main"].get("temp")),
             "descripcion": _description(row.get("weather")),
             **_weather_icon(row.get("weather")),
+            **({"viento_kmh": _number(round(speed * 3.6, 3), minimum=0)} if speed is not None else {}),
             **({"precipitacion_pct": round(_number(row["pop"], minimum=0, maximum=1) * 100, 2)}
                if row.get("pop") is not None else {}),
         })
