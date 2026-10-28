@@ -54,10 +54,11 @@ El clima sigue funcionando aunque la voz no esté instalada.
 
 ### Memoria y despliegue de la voz
 
-El worker procesa el texto completo en fragmentos de hasta 80 caracteres,
+El worker procesa el texto completo en fragmentos de hasta 48 caracteres,
 prefiriendo puntuación y espacios. Une los fragmentos en un solo WAV de 24 kHz,
 con pausas de 80 ms. Conserva Dora, español y velocidad 0,95. Libera los arrays
-de cada fragmento, usa un hilo de ONNX y desactiva su arena y patrón de memoria.
+de cada fragmento, usa un hilo de ONNX y desactiva su arena, patrón de memoria
+y prepacking de pesos para reducir copias adicionales.
 El proceso termina al finalizar cada consulta; los límites de 600 caracteres,
 90 segundos de audio y 45 segundos de ejecución siguen vigentes.
 
@@ -87,6 +88,20 @@ La prueba local de 600 caracteres tuvo un pico de 334 MiB y demoró unos 37 segu
 el consejo de muestra demoró unos 21 segundos. Una CPU más limitada puede exceder
 los 45 segundos aunque la memoria alcance; en ese caso se debe revisar la ejecución
 de voz antes de dar por resuelto el despliegue.
+
+La primera prueba en Render con fragmentos de 80 caracteres y prepacking activado
+superó 512 MB aun con INT8. Esos valores locales no representan el contenedor Linux.
+La configuración actual de 48 caracteres y sin prepacking tuvo un pico local
+aproximado de 290 MiB para el consejo de muestra; queda pendiente validar Render.
+
+En Linux cada petición de voz registra eventos `isa_memory` en stderr heredado,
+antes de cargar librerías/modelo y antes/después de cada fragmento. Los campos
+`rss_mib` y `peak_rss_mib` corresponden al proceso que registra; `cgroup_current_mib`
+y `cgroup_limit_mib` al contenedor cuando sus contadores están disponibles.
+`cgroup_anon_mib` y `cgroup_file_mib` separan memoria anónima y archivos/caché.
+No se registran texto, audio, rutas ni credenciales. Si el proceso es terminado por
+OOM, los eventos anteriores permanecen en los logs, en lugar de quedar capturados
+en un pipe que se pierde con el reinicio.
 
 ## API y pruebas
 

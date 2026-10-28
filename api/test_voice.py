@@ -10,6 +10,7 @@ from django.test import SimpleTestCase, override_settings
 
 from .services.voice import VoiceBusy, VoiceUnavailable, _gate, synthesize
 from .services.voice_chunks import MAX_CHUNK_CHARACTERS, split_voice_text
+from .services.voice_memory import memory_snapshot, trace_voice_memory
 
 
 def sample_wav():
@@ -134,3 +135,34 @@ class VoiceChunkTests(SimpleTestCase):
     def test_short_text_and_whitespace(self):
         self.assertEqual(list(split_voice_text('  Hola, Isa.  ')), ['Hola, Isa.'])
         self.assertEqual(list(split_voice_text('   ')), [])
+
+
+class VoiceMemoryTests(SimpleTestCase):
+    @patch('api.services.voice_memory._read')
+    def test_reports_process_and_container_separately(self, read):
+        contents = {
+            '/proc/self/status': 'Name:\tpython\nVmRSS:\t102400 kB\nVmHWM:\t153600 kB\n',
+            '/sys/fs/cgroup/memory.current': str(450 * 1048576),
+            '/sys/fs/cgroup/memory.max': str(512 * 1048576),
+            '/sys/fs/cgroup/memory.stat': f'anon {300 * 1048576}\nfile {150 * 1048576}\n',
+        }
+        read.side_effect = lambda path: contents.get(path, '')
+        self.assertEqual(memory_snapshot(), {
+            'rss_mib': 100.0, 'peak_rss_mib': 150.0, 'cgroup_current_mib': 450.0,
+            'cgroup_limit_mib': 512.0, 'cgroup_anon_mib': 300.0, 'cgroup_file_mib': 150.0,
+        })
+
+    @patch('api.services.voice_memory._read', return_value='')
+    def test_absent_counters_are_not_reported_as_zero(self, read):
+        self.assertEqual(memory_snapshot(), {})
+
+    @patch('api.services.voice_memory.sys.platform', 'linux')
+    @patch('api.services.voice_memory.memory_snapshot', return_value={'rss_mib': 100.0})
+    def test_diagnostics_never_accept_arbitrary_text(self, snapshot):
+        output = io.StringIO()
+        with patch('api.services.voice_memory.sys.__stderr__', output):
+            trace_voice_memory('PRIVATE-TEXT')
+            trace_voice_memory('model_ready', 'PRIVATE-TEXT')
+        self.assertEqual(json.loads(output.getvalue()), {
+            'event': 'isa_memory', 'stage': 'model_ready', 'rss_mib': 100.0,
+        })

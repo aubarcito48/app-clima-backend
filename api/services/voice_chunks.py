@@ -2,7 +2,7 @@
 
 import re
 
-MAX_CHUNK_CHARACTERS = 80
+MAX_CHUNK_CHARACTERS = 48
 
 
 def split_voice_text(text):

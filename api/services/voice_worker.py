@@ -14,9 +14,11 @@ for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
 # El worker también se ejecuta directamente por ruta desde Django.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from api.services.voice_chunks import split_voice_text
+from api.services.voice_memory import trace_voice_memory
 
 
 def main():
+    trace_voice_memory('worker_start')
     model_dir = Path(sys.argv[1])
     model = model_dir / 'kokoro-v1.0.int8.onnx'
     voices = model_dir / 'voices-v1.0.bin'
@@ -29,22 +31,27 @@ def main():
         import numpy as np
         import onnxruntime as rt
         from kokoro_onnx import Kokoro
+        trace_voice_memory('libraries_loaded')
 
         options = rt.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1
         options.execution_mode = rt.ExecutionMode.ORT_SEQUENTIAL
         options.enable_cpu_mem_arena = False
         options.enable_mem_pattern = False
+        options.add_session_config_entry('session.disable_prepacking', '1')
+        trace_voice_memory('model_loading')
         session = rt.InferenceSession(str(model), sess_options=options,
                                       providers=['CPUExecutionProvider'])
         engine = Kokoro.from_session(session, str(voices))
+        trace_voice_memory('model_ready')
         output = io.BytesIO()
         frames = 0
         with wave.open(output, 'wb') as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)
             wav.setframerate(24000)
-            for chunk in split_voice_text(text):
+            for index, chunk in enumerate(split_voice_text(text)):
+                trace_voice_memory('chunk_start', index)
                 samples, sample_rate = engine.create(chunk, voice='ef_dora', speed=.95, lang='es')
                 if sample_rate != 24000 or not len(samples) or not np.isfinite(samples).all():
                     return 1
@@ -57,6 +64,8 @@ def main():
                 pcm = (np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes()
                 wav.writeframesraw(pcm)
                 del samples, pcm
+                trace_voice_memory('chunk_done', index)
+    trace_voice_memory('complete')
     sys.stdout.buffer.write(output.getvalue())
     return 0
 
