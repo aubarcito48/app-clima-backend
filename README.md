@@ -4,6 +4,16 @@ API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones,
 
 Frontend: [StitchWeather](https://github.com/aubarcito48/app-clima).
 
+Los consejos de Groq están limitados a 280 caracteres (incluidos espacios) y
+40 palabras. El prompt pide hasta dos frases: ropa recomendada y motivo climático,
+con una adaptación para más tarde cuando el pronóstico lo justifique. Evita
+repetir todas las mediciones, saludos y despedidas. Isa lee el mismo texto completo.
+Las respuestas que exceden los límites se consideran no disponibles; no se cortan
+frases a mitad ni se hace otra llamada a Groq. Se conserva el presupuesto de tokens
+de razonamiento del modelo: la brevedad se controla por instrucciones y validación.
+Esto reduce la duración del audio, pero no garantiza resolver por sí solo el pico
+de memoria de la primera generación de Kokoro en Render.
+
 ## Ejecución local
 
 Versión de Python del proyecto: 3.14.3. Desde esta carpeta, en PowerShell:

@@ -200,9 +200,20 @@ class RecommendationGenerationTests(SimpleTestCase):
         self.assertEqual(len(self.requests), 1)
 
     def test_empty_wrong_type_and_oversized_text_are_unavailable(self):
-        for text in [None, "", "   \n\t ", 7, ["not text"], "x" * 601, "a " * 81, "a\u200bb"]:
+        for text in [None, "", "   \n\t ", 7, ["not text"], "x" * 281, "a " * 41, "a\u200bb"]:
             with self.subTest(content_type=type(text).__name__, length=len(str(text))):
                 self.assert_unavailable(self.generate(completion(text)))
+
+    def test_short_clothing_advice_preserves_the_later_weather_change(self):
+        text = ('Con 10 °C, llevá una campera ligera y pantalón cómodo. '
+                'Por la tarde sube la temperatura: podés quitarte una capa.')
+        self.assertEqual(self.generate(completion(text))['texto'], text)
+
+    def test_exact_character_and_word_limits_are_accepted_without_cutting_text(self):
+        text = ' '.join(['abrigo'] * 40) + '.'
+        self.assertEqual(len(text), 280)
+        self.assertEqual(len(text.split()), 40)
+        self.assertEqual(self.generate(completion(text))['texto'], text)
 
     def test_truncated_refused_or_tool_responses_are_not_presented_as_complete_advice(self):
         for finish in ["length", "content_filter", "tool_calls", None]:
