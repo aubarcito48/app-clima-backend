@@ -1,4 +1,4 @@
-"""Instala Kokoro INT8 y Dora con tamaño y SHA256 verificados."""
+"""Instala Piper Sharvard y su configuración con tamaño y SHA256 verificados."""
 
 import argparse
 import hashlib
@@ -8,10 +8,12 @@ import urllib.request
 
 
 ASSETS = (
-    ('kokoro-v1.0.int8.onnx', 92361271, '6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb'),
-    ('voices-v1.0.bin', 28214398, 'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d'),
+    ('es_ES-sharvard-medium.onnx', 76733615, '40febfb1679c69a4505ff311dc136e121e3419a13a290ef264fdf43ddedd0fb1'),
+    ('es_ES-sharvard-medium.onnx.json', 4903, '7438c9b699c72b0c3388dae1b68d3f364dc66a2150fe554a1c11f03372957b2c'),
+    ('MODEL_CARD', 392, '37655314d08fe8a0900abc628d3bcbee48ffbdd8fad9306b89525a0ada20fefc'),
 )
-BASE_URL = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
+BASE_URL = ('https://huggingface.co/rhasspy/piper-voices/resolve/'
+            '5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/es/es_ES/sharvard/medium/')
 
 
 def verified(path, size, digest):
@@ -24,7 +26,7 @@ def verified(path, size, digest):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--from-dir', type=Path)
-    parser.add_argument('--target', type=Path, default=Path(__file__).resolve().parents[1] / 'models' / 'kokoro-v1.0')
+    parser.add_argument('--target', type=Path, default=Path(__file__).resolve().parents[1] / 'models' / 'piper-sharvard')
     args = parser.parse_args()
     args.target.mkdir(parents=True, exist_ok=True)
     for name, size, digest in ASSETS:
@@ -51,7 +53,7 @@ def main():
             partial.replace(target)
         finally:
             partial.unlink(missing_ok=True)
-    print('Dora instalada. Reiniciá Django para usar la voz de Isa.')
+    print('Piper Sharvard instalado (voz femenina F). Reiniciá Django para usar la voz de Isa.')
 
 
 if __name__ == '__main__':

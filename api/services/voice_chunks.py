@@ -1,24 +1,29 @@
-"""Límite de pronunciación después de expandir números, unidades y abreviaturas."""
+"""Bound Piper phoneme groups while preserving compound symbols and words."""
 
-import re
-
-MAX_CHUNK_PHONEMES = 32
+MAX_CHUNK_PHONEMES = 64
 
 
-def prepare_voice_chunks(tokenizer, text):
-    return list(split_voice_phonemes(tokenizer.phonemize(text, lang='es')))
+def prepare_voice_chunks(voice, text):
+    return [chunk for sentence in voice.phonemize(text)
+            for chunk in split_voice_phonemes(sentence)]
 
 
 def split_voice_phonemes(phonemes):
-    remaining = phonemes.strip()
-    while len(remaining) > MAX_CHUNK_PHONEMES:
-        prefix = remaining[:MAX_CHUNK_PHONEMES + 1]
-        pauses = [match.end() for match in re.finditer(r'[.!?;:,](?=\s)', prefix)
-                  if match.end() >= MAX_CHUNK_PHONEMES // 2]
-        spaces = [match.start() for match in re.finditer(r'\s+', prefix)
-                  if 0 < match.start() <= MAX_CHUNK_PHONEMES]
-        cut = pauses[-1] if pauses else spaces[-1] if spaces else MAX_CHUNK_PHONEMES
-        yield remaining[:cut].strip()
-        remaining = remaining[cut:].strip()
-    if remaining:
-        yield remaining
+    remaining = list(phonemes)
+    while remaining:
+        while remaining and remaining[0].isspace():
+            remaining.pop(0)
+        if not remaining:
+            return
+        cut = min(len(remaining), MAX_CHUNK_PHONEMES)
+        if len(remaining) > cut:
+            pauses = [i + 1 for i, value in enumerate(remaining[:cut])
+                      if value in '.!?;:,' and i >= cut // 2]
+            spaces = [i for i, value in enumerate(remaining[:cut + 1])
+                      if i > 0 and value.isspace()]
+            cut = pauses[-1] if pauses else spaces[-1] if spaces else cut
+        chunk, remaining = remaining[:cut], remaining[cut:]
+        while chunk and chunk[-1].isspace():
+            chunk.pop()
+        if chunk:
+            yield chunk

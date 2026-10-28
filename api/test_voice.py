@@ -18,7 +18,7 @@ def sample_wav():
     with wave.open(buffer, 'wb') as output:
         output.setnchannels(1)
         output.setsampwidth(2)
-        output.setframerate(24000)
+        output.setframerate(22050)
         output.writeframes(b'\x00\x00' * 240)
     return buffer.getvalue()
 
@@ -37,7 +37,7 @@ class VoiceEndpointTests(SimpleTestCase):
         self.assertIn('no-store', response['Cache-Control'])
         self.assertEqual(response['X-Content-Type-Options'], 'nosniff')
         with wave.open(io.BytesIO(response.content)) as audio:
-            self.assertEqual(audio.getframerate(), 24000)
+            self.assertEqual(audio.getframerate(), 22050)
         self.assertEqual(response.content, sample_wav())
 
     @patch('api.voice_views.synthesize')
@@ -120,29 +120,34 @@ class VoiceChunkTests(SimpleTestCase):
     def test_short_numeric_text_is_split_after_pronunciation_expands_it(self):
         tokenizer = Mock()
         pronunciation = 'nwˈeβe pˈunto noβˈenta i θˈinko ɡɾˈaðos θˈelsjus '
-        tokenizer.phonemize.return_value = pronunciation
+        tokenizer.phonemize.return_value = [list(pronunciation * 2)]
         chunks = prepare_voice_chunks(tokenizer, '9.95 °C')
-        tokenizer.phonemize.assert_called_once_with('9.95 °C', lang='es')
+        tokenizer.phonemize.assert_called_once_with('9.95 °C')
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
-        self.assertEqual(' '.join(chunks), pronunciation.strip())
+        self.assertEqual(' '.join(''.join(chunk) for chunk in chunks), (pronunciation * 2).strip())
 
     def test_expanded_pronunciation_is_bounded_without_losing_stress_or_sounds(self):
         text = ('oɪ en kˈoɾðoβa ˈaθe ðjˈeθ ɡɾˈaðos. ʝˈeβa ˈuna tʃakˈeta lixˈeɾa; ' * 8)
         chunks = list(split_voice_phonemes(text))
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(0 < len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
-        self.assertEqual(' '.join(chunks), ' '.join(text.split()))
+        self.assertEqual(' '.join(''.join(chunk) for chunk in chunks), ' '.join(text.split()))
 
     def test_unbroken_input_is_also_bounded_and_never_truncated(self):
         text = 'á' * 600
         chunks = list(split_voice_phonemes(text))
-        self.assertEqual(''.join(chunks), text)
+        self.assertEqual(''.join(''.join(chunk) for chunk in chunks), text)
         self.assertTrue(all(len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
 
     def test_short_text_and_whitespace(self):
-        self.assertEqual(list(split_voice_phonemes('  ˈola ˈisa.  ')), ['ˈola ˈisa.'])
+        self.assertEqual(list(split_voice_phonemes('  ˈola ˈisa.  ')), [list('ˈola ˈisa.')])
         self.assertEqual(list(split_voice_phonemes('   ')), [])
+
+    def test_compound_phoneme_symbols_are_never_split_or_lost(self):
+        phonemes = ['a̪'] * (MAX_CHUNK_PHONEMES + 5)
+        chunks = list(split_voice_phonemes(phonemes))
+        self.assertEqual([symbol for chunk in chunks for symbol in chunk], phonemes)
 
 
 class VoiceMemoryTests(SimpleTestCase):
@@ -172,5 +177,5 @@ class VoiceMemoryTests(SimpleTestCase):
             trace_voice_memory('PRIVATE-TEXT')
             trace_voice_memory('model_ready', 'PRIVATE-TEXT', tokens='PRIVATE-TEXT')
         self.assertEqual(json.loads(output.getvalue()), {
-            'event': 'isa_memory', 'stage': 'model_ready', 'rss_mib': 100.0,
+            'event': 'isa_memory', 'engine': 'piper', 'stage': 'model_ready', 'rss_mib': 100.0,
         })

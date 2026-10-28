@@ -1,4 +1,4 @@
-"""Dora local: una síntesis por proceso, sin red y con tiempo máximo."""
+"""Piper local: una síntesis por proceso, sin red y con tiempo máximo."""
 
 from pathlib import Path
 import subprocess
@@ -11,7 +11,7 @@ from .voice_memory import trace_voice_memory
 
 _gate = threading.Lock()
 MAX_TEXT = 600
-MAX_AUDIO_BYTES = 4_320_044  # 90 segundos, mono PCM16 a 24 kHz.
+MAX_AUDIO_BYTES = 3_969_044  # 90 segundos, mono PCM16 a 22.050 Hz.
 
 
 class VoiceUnavailable(Exception):

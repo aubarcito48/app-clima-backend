@@ -1,2 +1,4 @@
-# Opcional: instala Dora en el mismo entorno que ejecuta Django.
-kokoro-onnx==0.4.7
+# Voz femenina de Isa: Piper Sharvard, hablante F.
+piper-tts==1.8.0
+onnxruntime==1.31.1
+numpy==2.5.4

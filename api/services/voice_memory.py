@@ -44,7 +44,7 @@ def trace_voice_memory(stage, chunk=None, tokens=None):
                      'phonemizing', 'phonemes_ready', 'inference_start', 'inference_done',
                      'model_ready', 'chunk_start', 'chunk_done', 'complete', 'worker_failed', 'timeout'):
         return
-    event = {'event': 'isa_memory', 'stage': stage, **memory_snapshot()}
+    event = {'event': 'isa_memory', 'engine': 'piper', 'stage': stage, **memory_snapshot()}
     if type(chunk) is int and chunk >= 0:
         event['chunk'] = chunk
     if type(tokens) is int and tokens >= 0:
