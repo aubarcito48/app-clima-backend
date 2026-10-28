@@ -75,7 +75,7 @@ class CorsConfigurationTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Access-Control-Allow-Origin"], "http://localhost:4200")
-        self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, OPTIONS")
+        self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
 
     def test_cors_does_not_apply_outside_the_api(self):
         response = self.client.get("/other/", HTTP_ORIGIN="http://localhost:4200")

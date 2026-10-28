@@ -39,7 +39,7 @@ USE_TZ = True
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = False
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
-CORS_ALLOW_METHODS = ["GET", "OPTIONS"]
+CORS_ALLOW_METHODS = ["GET", "POST", "OPTIONS"]
 CORS_URLS_REGEX = r"^/api(?:/|$)"
 
 # Vacíos hasta integrar los proveedores. Nunca se entregan al frontend.
@@ -51,6 +51,7 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "").strip() or "openai/gpt-oss-20b"
 GROQ_CONNECT_TIMEOUT_SECONDS = env_timeout("GROQ_CONNECT_TIMEOUT_SECONDS", 3)
 GROQ_READ_TIMEOUT_SECONDS = env_timeout("GROQ_READ_TIMEOUT_SECONDS", 8)
 GROQ_MAX_COMPLETION_TOKENS = env_int("GROQ_MAX_COMPLETION_TOKENS", 160, minimum=32, maximum=512)
+ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'models' / 'kokoro-v1.0')
 
 # Evitar que el logging verbose del SDK/transporte propague prompts o cabeceras.
 # Los logs operativos de Django se mantienen; no se registran cuerpos de Groq.

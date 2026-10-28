@@ -3,9 +3,11 @@
 from django.urls import path
 
 from . import views
+from .voice_views import voice
 
 app_name = "api"
 urlpatterns = [
+    path("voz/", voice, name="voice"),
     path("health/", views.health, name="health"),
     path("clima/", views.climate, name="climate"),
     path("lugares/", views.places, name="places"),

@@ -91,7 +91,7 @@ with patch('socket.socket.connect', side_effect=AssertionError('Network forbidde
     assert client.get('/api/v1/health/', secure=True, HTTP_HOST='wrong.invalid').status_code == 400
     response = client.options('/api/v1/clima/', secure=True, HTTP_ORIGIN='https://frontend.example.invalid', HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET')
     assert response.status_code == 200
-    assert response['Access-Control-Allow-Methods'] == 'GET, OPTIONS'
+    assert response['Access-Control-Allow-Methods'] == 'GET, POST, OPTIONS'
     with patch('api.views.query_climate', side_effect=RuntimeError('PRIVATE-EXCEPTION appid=PRIVATE-WEATHER-KEY PRIVATE-PROMPT')):
         response = client.get('/api/v1/clima/?ciudad=PRIVATE-CITY', secure=True, HTTP_ORIGIN='https://frontend.example.invalid')
         assert response.status_code == 500

@@ -1,0 +1,2 @@
+# Opcional: instala Dora en el mismo entorno que ejecuta Django.
+kokoro-onnx==0.4.7
