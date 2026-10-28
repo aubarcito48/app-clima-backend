@@ -64,9 +64,11 @@ El clima sigue funcionando aunque la voz no esté instalada.
 
 ### Memoria y despliegue de la voz
 
-El worker procesa el texto completo en fragmentos de hasta 48 caracteres,
-prefiriendo puntuación y espacios. Une los fragmentos en un solo WAV de 24 kHz,
-con pausas de 80 ms. Conserva Dora, español y velocidad 0,95. Libera los arrays
+El worker convierte el texto completo a fonemas una sola vez, antes de cargar
+el modelo. Después limita cada entrada de inferencia a 32 símbolos de pronunciación,
+prefiriendo puntuación y espacios: los números y unidades ya están expandidos.
+Une los fragmentos en un solo WAV de 24 kHz, con pausas de 20 ms entre grupos
+y 80 ms después de puntuación de cierre. Conserva Dora, español y velocidad 0,95. Libera los arrays
 de cada fragmento, usa un hilo de ONNX y desactiva su arena, patrón de memoria
 y prepacking de pesos para reducir copias adicionales.
 El proceso termina al finalizar cada consulta; los límites de 600 caracteres,
@@ -90,22 +92,23 @@ Prueba real opcional (requiere las dependencias y modelos instalados):
 
 En Linux/Render: `python scripts/profile_voice.py`. Informa el pico RSS del proceso
 de voz y guarda `tmp/isa-int8-sample.wav`; `--text` permite probar otros consejos.
-No mide Django, Gunicorn ni la memoria total del contenedor. En Windows, el consejo
-de muestra de 397 caracteres tuvo un pico aproximado de 306 MiB, frente a 863 MiB
-en la prueba FP32 de longitud comparable. No garantiza entrar en 512 MB en Linux:
-el despliegue debe validarse con consejos largos, concurrencia y el tiempo máximo.
-La prueba local de 600 caracteres tuvo un pico de 334 MiB y demoró unos 37 segundos;
-el consejo de muestra demoró unos 21 segundos. Una CPU más limitada puede exceder
-los 45 segundos aunque la memoria alcance; en ese caso se debe revisar la ejecución
-de voz antes de dar por resuelto el despliegue.
+No mide Django, Gunicorn ni la memoria total del contenedor. Con la configuración
+de 32 símbolos, la prueba de 397 caracteres en Windows tuvo un pico de 247 MiB y
+demoró unos 23 segundos; un consejo de 130 caracteres tuvo 245 MiB y unos 10 segundos.
+No garantiza entrar en 512 MB en Linux ni finalizar dentro de 45 segundos en una CPU
+más limitada. El despliegue debe validarse con consejos largos y concurrencia.
 
-La primera prueba en Render con fragmentos de 80 caracteres y prepacking activado
-superó 512 MB aun con INT8. Esos valores locales no representan el contenedor Linux.
-La configuración actual de 48 caracteres y sin prepacking tuvo un pico local
-aproximado de 290 MiB para el consejo de muestra; queda pendiente validar Render.
+Las pruebas previas en Render con INT8 y fragmentos de texto (incluso de 48 caracteres)
+superaron 512 MB durante el primer fragmento. El contenedor estaba en 305–310 MiB
+con el modelo cargado. Contar caracteres no limitaba la expansión de la pronunciación;
+la configuración actual controla esa entrada después de convertirla a fonemas.
+Queda pendiente validar esta configuración en Render.
 
 En Linux cada petición de voz registra eventos `isa_memory` en stderr heredado,
 antes de cargar librerías/modelo y antes/después de cada fragmento. Los campos
+`phonemizing`/`phonemes_ready` e `inference_start`/`inference_done` permiten distinguir
+preparación de pronunciación y cálculo de ONNX. `tokens` registra solo la cantidad
+de unidades que recibe la inferencia, nunca su contenido. Los campos
 `rss_mib` y `peak_rss_mib` corresponden al proceso que registra; `cgroup_current_mib`
 y `cgroup_limit_mib` al contenedor cuando sus contadores están disponibles.
 `cgroup_anon_mib` y `cgroup_file_mib` separan memoria anónima y archivos/caché.

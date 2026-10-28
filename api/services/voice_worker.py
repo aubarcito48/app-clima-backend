@@ -13,7 +13,7 @@ for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
 
 # El worker también se ejecuta directamente por ruta desde Django.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from api.services.voice_chunks import split_voice_text
+from api.services.voice_chunks import prepare_voice_chunks
 from api.services.voice_memory import trace_voice_memory
 
 
@@ -31,7 +31,16 @@ def main():
         import numpy as np
         import onnxruntime as rt
         from kokoro_onnx import Kokoro
+        from kokoro_onnx.tokenizer import Tokenizer
         trace_voice_memory('libraries_loaded')
+
+        # Convertir una sola vez, antes de sumar los pesos de ONNX a la memoria.
+        trace_voice_memory('phonemizing')
+        tokenizer = Tokenizer()
+        chunks = prepare_voice_chunks(tokenizer, text)
+        if not chunks:
+            return 1
+        trace_voice_memory('phonemes_ready')
 
         options = rt.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1
@@ -46,16 +55,21 @@ def main():
         trace_voice_memory('model_ready')
         output = io.BytesIO()
         frames = 0
+        previous_chunk = ''
         with wave.open(output, 'wb') as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)
             wav.setframerate(24000)
-            for index, chunk in enumerate(split_voice_text(text)):
+            for index, chunk in enumerate(chunks):
                 trace_voice_memory('chunk_start', index)
-                samples, sample_rate = engine.create(chunk, voice='ef_dora', speed=.95, lang='es')
+                trace_voice_memory('inference_start', index, tokens=len(tokenizer.tokenize(chunk)))
+                samples, sample_rate = engine.create(chunk, voice='ef_dora', speed=.95,
+                                                     lang='es', is_phonemes=True)
+                trace_voice_memory('inference_done', index)
                 if sample_rate != 24000 or not len(samples) or not np.isfinite(samples).all():
                     return 1
-                pause_frames = 1920 if frames else 0  # 80 ms entre fragmentos.
+                # Pausa mínima entre palabras; 80 ms al terminar una frase.
+                pause_frames = (1920 if previous_chunk.endswith(('.', '!', '?', ';', ':')) else 480) if frames else 0
                 frames += pause_frames + len(samples)
                 if frames > 24000 * 90:
                     return 1
@@ -65,6 +79,7 @@ def main():
                 wav.writeframesraw(pcm)
                 del samples, pcm
                 trace_voice_memory('chunk_done', index)
+                previous_chunk = chunk
     trace_voice_memory('complete')
     sys.stdout.buffer.write(output.getvalue())
     return 0

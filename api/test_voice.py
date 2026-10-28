@@ -3,13 +3,13 @@ import json
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import wave
 
 from django.test import SimpleTestCase, override_settings
 
 from .services.voice import VoiceBusy, VoiceUnavailable, _gate, synthesize
-from .services.voice_chunks import MAX_CHUNK_CHARACTERS, split_voice_text
+from .services.voice_chunks import MAX_CHUNK_PHONEMES, prepare_voice_chunks, split_voice_phonemes
 from .services.voice_memory import memory_snapshot, trace_voice_memory
 
 
@@ -117,24 +117,32 @@ class VoiceWorkerTests(SimpleTestCase):
 
 
 class VoiceChunkTests(SimpleTestCase):
-    def test_preserves_all_words_accents_numbers_and_decimals_in_long_advice(self):
-        text = ('En Córdoba hacen 10.5 °C y la humedad es del 94 %. '
-                'Llevá una campera ligera; por la tarde podés quitarte una capa. ' * 5)[:600]
-        chunks = list(split_voice_text(text))
+    def test_short_numeric_text_is_split_after_pronunciation_expands_it(self):
+        tokenizer = Mock()
+        pronunciation = 'nwˈeβe pˈunto noβˈenta i θˈinko ɡɾˈaðos θˈelsjus '
+        tokenizer.phonemize.return_value = pronunciation
+        chunks = prepare_voice_chunks(tokenizer, '9.95 °C')
+        tokenizer.phonemize.assert_called_once_with('9.95 °C', lang='es')
         self.assertGreater(len(chunks), 1)
-        self.assertTrue(all(0 < len(chunk) <= MAX_CHUNK_CHARACTERS for chunk in chunks))
+        self.assertTrue(all(len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
+        self.assertEqual(' '.join(chunks), pronunciation.strip())
+
+    def test_expanded_pronunciation_is_bounded_without_losing_stress_or_sounds(self):
+        text = ('oɪ en kˈoɾðoβa ˈaθe ðjˈeθ ɡɾˈaðos. ʝˈeβa ˈuna tʃakˈeta lixˈeɾa; ' * 8)
+        chunks = list(split_voice_phonemes(text))
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(0 < len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
         self.assertEqual(' '.join(chunks), ' '.join(text.split()))
-        self.assertTrue(any('10.5' in chunk for chunk in chunks))
 
     def test_unbroken_input_is_also_bounded_and_never_truncated(self):
         text = 'á' * 600
-        chunks = list(split_voice_text(text))
+        chunks = list(split_voice_phonemes(text))
         self.assertEqual(''.join(chunks), text)
-        self.assertTrue(all(len(chunk) <= MAX_CHUNK_CHARACTERS for chunk in chunks))
+        self.assertTrue(all(len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
 
     def test_short_text_and_whitespace(self):
-        self.assertEqual(list(split_voice_text('  Hola, Isa.  ')), ['Hola, Isa.'])
-        self.assertEqual(list(split_voice_text('   ')), [])
+        self.assertEqual(list(split_voice_phonemes('  ˈola ˈisa.  ')), ['ˈola ˈisa.'])
+        self.assertEqual(list(split_voice_phonemes('   ')), [])
 
 
 class VoiceMemoryTests(SimpleTestCase):
@@ -162,7 +170,7 @@ class VoiceMemoryTests(SimpleTestCase):
         output = io.StringIO()
         with patch('api.services.voice_memory.sys.__stderr__', output):
             trace_voice_memory('PRIVATE-TEXT')
-            trace_voice_memory('model_ready', 'PRIVATE-TEXT')
+            trace_voice_memory('model_ready', 'PRIVATE-TEXT', tokens='PRIVATE-TEXT')
         self.assertEqual(json.loads(output.getvalue()), {
             'event': 'isa_memory', 'stage': 'model_ready', 'rss_mib': 100.0,
         })

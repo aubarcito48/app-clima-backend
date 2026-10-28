@@ -36,16 +36,19 @@ def memory_snapshot():
     return measurements
 
 
-def trace_voice_memory(stage, chunk=None):
+def trace_voice_memory(stage, chunk=None, tokens=None):
     if sys.platform != 'linux':
         return
     # Lista cerrada: ningún argumento del usuario puede convertirse en un campo.
     if stage not in ('request_start', 'worker_start', 'libraries_loaded', 'model_loading',
+                     'phonemizing', 'phonemes_ready', 'inference_start', 'inference_done',
                      'model_ready', 'chunk_start', 'chunk_done', 'complete', 'worker_failed', 'timeout'):
         return
     event = {'event': 'isa_memory', 'stage': stage, **memory_snapshot()}
     if type(chunk) is int and chunk >= 0:
         event['chunk'] = chunk
+    if type(tokens) is int and tokens >= 0:
+        event['tokens'] = tokens
     try:
         print(json.dumps(event), file=sys.__stderr__, flush=True)
     except OSError:
