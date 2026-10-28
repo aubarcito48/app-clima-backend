@@ -65,7 +65,8 @@ durante una consulta.
 
 Solo para la pronunciación, las temperaturas como `19 °C` se convierten en
 `19 grados` (o `1 grado`); Isa omite la letra C. El consejo mostrado conserva
-su texto y sus unidades originales.
+su texto y sus unidades originales. Del mismo modo, `km/h` se pronuncia
+`kilómetros por hora` sin cambiar la abreviatura mostrada en la tarjeta.
 Piper convierte el texto a fonemas por oración. Cada inferencia recibe hasta
 64 símbolos de pronunciación, conservando símbolos compuestos y prefiriendo
 límites de palabras. Usa CPU con un hilo de ONNX, sin arena, patrón de memoria ni

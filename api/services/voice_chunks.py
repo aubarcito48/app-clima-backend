@@ -4,6 +4,7 @@ import re
 
 MAX_CHUNK_PHONEMES = 64
 CELSIUS = re.compile(r'(?<![\w.,])([+−-]?\d+(?:[.,]\d+)?)\s*[°º]\s*C(?!\w)', re.IGNORECASE)
+KILOMETERS_PER_HOUR = re.compile(r'(?<![^\W\d_])km\s*/\s*h(?!\w)', re.IGNORECASE)
 
 
 def speech_text(text):
@@ -11,7 +12,11 @@ def speech_text(text):
         number = match.group(1)
         unit = 'grado' if re.fullmatch(r'[+−-]?1(?:[.,]0+)?', number) else 'grados'
         return f'{number} {unit}'
-    return CELSIUS.sub(degrees, text)
+    text = CELSIUS.sub(degrees, text)
+    def speed_unit(match):
+        separator = ' ' if match.start() and text[match.start() - 1].isdigit() else ''
+        return separator + 'kilómetros por hora'
+    return KILOMETERS_PER_HOUR.sub(speed_unit, text)
 
 
 def prepare_voice_chunks(voice, text):

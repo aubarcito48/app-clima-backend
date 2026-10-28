@@ -160,10 +160,17 @@ class VoicePronunciationTests(SimpleTestCase):
                 self.assertEqual(speech_text(original), spoken)
 
     def test_regular_text_and_other_units_are_preserved(self):
-        text = 'En Córdoba: viento de 19 km/h, humedad del 80 % y calle C.'
+        text = 'En Córdoba: humedad del 80 %, distancia de 19 km y calle C.'
         self.assertEqual(speech_text(text), text)
         self.assertEqual(speech_text('Llevá abrigo con 19 °C; después 25 °C.'),
                          'Llevá abrigo con 19 grados; después 25 grados.')
+
+    def test_wind_speed_units_are_expanded_only_for_speech(self):
+        for text in ('19 km/h', '19km/h', '19 km / h', '19 KM/H'):
+            with self.subTest(text=text):
+                self.assertEqual(speech_text(text), '19 kilómetros por hora')
+        self.assertEqual(speech_text('19 °C y viento de 5,5 km/h.'),
+                         '19 grados y viento de 5,5 kilómetros por hora.')
 
 
 class VoiceMemoryTests(SimpleTestCase):
