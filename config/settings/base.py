@@ -18,6 +18,7 @@ INSTALLED_APPS = ["corsheaders", "api.apps.ApiConfig"]
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "api.request_limits.ApiRequestLimitsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -52,6 +53,15 @@ GROQ_CONNECT_TIMEOUT_SECONDS = env_timeout("GROQ_CONNECT_TIMEOUT_SECONDS", 3)
 GROQ_READ_TIMEOUT_SECONDS = env_timeout("GROQ_READ_TIMEOUT_SECONDS", 8)
 GROQ_MAX_COMPLETION_TOKENS = env_int("GROQ_MAX_COMPLETION_TOKENS", 160, minimum=32, maximum=512)
 ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'models' / 'piper-sharvard')
+
+# Límites compartidos por todos los visitantes del proceso, sin confiar en X-Forwarded-For.
+API_RATE_LIMIT_ENABLED = False
+API_REQUESTS_PER_MINUTE = {
+    '/api/v1/clima/': env_int('API_CLIMATE_REQUESTS_PER_MINUTE', 30, minimum=1, maximum=300),
+    '/api/v1/lugares/': env_int('API_PLACES_REQUESTS_PER_MINUTE', 120, minimum=1, maximum=600),
+    '/api/v1/alertas/': env_int('API_ALERTS_REQUESTS_PER_MINUTE', 60, minimum=1, maximum=300),
+    '/api/v1/voz/': env_int('API_VOICE_REQUESTS_PER_MINUTE', 6, minimum=1, maximum=60),
+}
 
 # Evitar que el logging verbose del SDK/transporte propague prompts o cabeceras.
 # Los logs operativos de Django se mantienen; no se registran cuerpos de Groq.

@@ -9,6 +9,7 @@ if env_bool("DJANGO_DEBUG", default=False):
     raise ImproperlyConfigured("DJANGO_DEBUG debe ser false en producción.")
 
 DEBUG = False
+API_RATE_LIMIT_ENABLED = True
 
 if not ALLOWED_HOSTS or not all(exact_host(host) for host in ALLOWED_HOSTS):  # noqa: F405
     raise ImproperlyConfigured("Producción requiere DJANGO_ALLOWED_HOSTS explícitos, sin comodines.")

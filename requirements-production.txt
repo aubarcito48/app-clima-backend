@@ -1,0 +1,3 @@
+-r requirements.txt
+-r requirements-voice.txt
+gunicorn==26.2.0

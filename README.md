@@ -20,6 +20,7 @@ Versión de Python del proyecto: 3.14.3. Desde esta carpeta, en PowerShell:
 
 ```powershell
 python -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip==26.2.2
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .venv\Scripts\python.exe scripts/create_local_env.py
 .venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
@@ -74,7 +75,7 @@ y el proceso termina al finalizar cada consulta.
 Build Command, ejecutado desde la raíz del backend:
 
 ```sh
-pip install -r requirements.txt && pip install gunicorn && pip install -r requirements-voice.txt && python scripts/install_voice.py
+python -m pip install --upgrade pip==26.2.2 && python -m pip install -r requirements-production.txt && python scripts/install_voice.py
 ```
 
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
@@ -132,3 +133,20 @@ de Piper. No se registran sus contenidos, texto, audio ni credenciales.
 ```
 
 Las pruebas usan proveedores simulados, sin claves reales, red ni base de datos. El contrato JSON está en [api/contracts](api/contracts/).
+
+## Seguridad y presupuestos de solicitudes
+
+En producción se aplica una ventana móvil de 60 segundos por proceso: clima 30,
+lugares 120, alertas 60 y voz 6 solicitudes. Son presupuestos globales compartidos,
+no límites por usuario. Se configuran con `API_*_REQUESTS_PER_MINUTE` en `.env.example`.
+Las respuestas 429 incluyen `Retry-After`; salud y preflight CORS no consumen cuota.
+Se mantiene un worker de Gunicorn y una síntesis simultánea. Con varios workers
+estos límites se multiplican: haría falta un limitador compartido o en el proxy.
+
+La voz lee como máximo 8193 bytes antes de rechazar cuerpos de más de 8192,
+rechaza claves JSON duplicadas y caracteres de control, invisibles o Unicode
+inválido. Las consultas de la API se limitan a 2048 caracteres antes de invocar
+proveedores. CORS no autentica clientes ni detiene scripts externos. El límite
+local reduce el consumo, pero no sustituye protección contra DDoS en el proxy/CDN.
+
+Ver alcance, evidencias y limitaciones en [SECURITY_REVIEW.md](SECURITY_REVIEW.md).

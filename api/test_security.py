@@ -15,6 +15,26 @@ from .operational import SafeOperationalFormatter
 
 
 class ProductionSecurityTests(SimpleTestCase):
+    def test_production_budget_rejects_voice_abuse_with_cors_and_keeps_health_available(self):
+        code = '''
+import json
+from unittest.mock import patch
+from django.conf import settings
+from django.test import Client
+assert settings.API_RATE_LIMIT_ENABLED is True
+client = Client(HTTP_HOST='api.example.invalid')
+with patch('api.voice_views.synthesize', return_value=b'RIFF' + b'x' * 50) as synth:
+    for expected in (200, 429):
+        response = client.post('/api/v1/voz/', json.dumps({'texto':'Hola, Isa.'}), content_type='application/json', secure=True, HTTP_ORIGIN='https://frontend.example.invalid')
+        assert response.status_code == expected
+        assert response['Access-Control-Allow-Origin'] == 'https://frontend.example.invalid'
+        assert response['Cache-Control'] == 'no-store' or 'no-store' in response['Cache-Control']
+    assert synth.call_count == 1
+assert client.get('/api/v1/health/', secure=True).status_code == 200
+'''
+        result = self.run_production(code, API_VOICE_REQUESTS_PER_MINUTE='1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def run_production(self, code="from django.core.management import call_command; call_command('check')", **overrides):
         environment = {
             **os.environ, "PYTHON_DOTENV_DISABLED": "1",

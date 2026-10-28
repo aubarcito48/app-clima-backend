@@ -1,12 +1,22 @@
 """Audio opcional: el fallo de voz nunca modifica la consulta del clima."""
 
 import json
+import unicodedata
 
 from django.http import HttpResponse
 from django.views.decorators.cache import never_cache
 
 from .responses import error_response
 from .services.voice import MAX_TEXT, VoiceBusy, VoiceUnavailable, synthesize
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate JSON key')
+        result[key] = value
+    return result
 
 
 @never_cache
@@ -18,15 +28,17 @@ def voice(request):
     if request.content_type != 'application/json':
         return error_response('ENTRADA_INVALIDA', 'Enviá un objeto JSON con texto.', status=415)
     # No se admiten formularios ni voces/rutas elegidas desde el cliente.
-    if len(request.body) > 8192:
+    body = request.read(8193)
+    if len(body) > 8192:
         return error_response('ENTRADA_INVALIDA', 'El texto es demasiado largo.', status=413)
     try:
-        payload = json.loads(request.body)
-    except (ValueError, UnicodeDecodeError):
+        payload = json.loads(body, object_pairs_hook=_unique_object)
+    except (ValueError, UnicodeDecodeError, RecursionError):
         payload = None
     text = payload.get('texto') if isinstance(payload, dict) and set(payload) == {'texto'} else None
     if (not isinstance(text, str) or not 1 <= len(text.strip()) <= MAX_TEXT
-            or len(text) > MAX_TEXT or any(ord(char) < 32 and char not in '\n\r\t' for char in text)):
+            or len(text) > MAX_TEXT or any(unicodedata.category(char) in {'Cc', 'Cf', 'Cs'}
+                                         and char not in '\n\r\t' for char in text)):
         return error_response('ENTRADA_INVALIDA', 'Enviá entre 1 y 600 caracteres de texto.', status=400)
     try:
         audio = synthesize(text)
