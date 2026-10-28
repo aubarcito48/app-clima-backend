@@ -52,9 +52,15 @@ de instalar. La instalación local no instala la voz en otro servidor.
 
 ### Síntesis y límites
 
-`POST /api/v1/voz/`, JSON `{"texto":"consejo exacto de Groq"}`, devuelve
+También se instala `en_US-lessac-medium`, voz femenina en inglés de Estados Unidos.
+Se carga únicamente el modelo del idioma solicitado, con la misma concurrencia de uno.
+El directorio conserva su nombre `models/piper-sharvard` y contiene ambos modelos.
+
+`POST /api/v1/voz/`, JSON `{"texto":"consejo exacto de Groq","idioma":"es"}`, devuelve
 `audio/wav`, PCM16 mono a 22.050 Hz y sin caché. La envolvente del frontend lee
 la frecuencia del WAV, por lo que la boca y los controles existentes son compatibles.
+`idioma` es opcional (`es` por defecto) y admite únicamente `es` o `en`.
+En inglés, `°C` y `km/h` se pronuncian como `degrees` y `kilometers per hour`.
 
 Se conservan el proceso aislado por consulta, el bloqueo de una síntesis por
 proceso y el límite de 45 segundos. El endpoint admite hasta 600 caracteres
@@ -83,8 +89,8 @@ python -m pip install --upgrade pip==26.2.2 && python -m pip install -r requirem
 ```
 
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
-Build Command instala Piper y sus archivos; el worker carga Sharvard. No requiere cambios del
-frontend ni otra API key. Para despliegues públicos, aplicar los límites de
+Build Command instala ambos modelos; el worker carga Sharvard o Lessac según el idioma.
+No requiere otra API key. Para despliegues públicos, aplicar los límites de
 solicitudes del proxy como para el resto de la API.
 
 ### Medición real
@@ -118,6 +124,8 @@ de Piper. No se registran sus contenidos, texto, audio ni credenciales.
 ### Créditos de voz
 
 - Motor [Piper / Open Home Foundation](https://github.com/OHF-Voice/piper1-gpl), GPL-3.0.
+- Modelo inglés [Lessac medium](https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/lessac/medium/MODEL_CARD),
+  corpus Catherine Byers / Lessac, con licencia de uso no comercial indicada en su ficha.
 - Modelo Sharvard medium de [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/raw/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/es/es_ES/sharvard/medium/MODEL_CARD);
   conservar el MODEL_CARD distribuido con los archivos.
 - Corpus Sharvard: Vincent Aubanel, Maria Luisa Garcia Lecumberri y Martin Cooke,

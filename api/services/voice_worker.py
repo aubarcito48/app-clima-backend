@@ -17,14 +17,21 @@ from api.services.voice_memory import trace_voice_memory
 
 MODEL_NAME = 'es_ES-sharvard-medium.onnx'
 SAMPLE_RATE = 22050
-FEMALE_SPEAKER = 1
+VOICES = {
+    'es': (MODEL_NAME, 1, 2),
+    'en': ('en_US-lessac-medium.onnx', 0, 1),
+}
 
 
 def main():
     trace_voice_memory('worker_start')
     model_dir = Path(sys.argv[1])
-    model = model_dir / MODEL_NAME
-    config_path = model_dir / (MODEL_NAME + '.json')
+    language = sys.argv[2] if len(sys.argv) > 2 else 'es'
+    if language not in VOICES:
+        return 1
+    model_name, speaker, speakers = VOICES[language]
+    model = model_dir / model_name
+    config_path = model_dir / (model_name + '.json')
     if not model.is_file() or not config_path.is_file():
         return 1
     text = sys.stdin.buffer.read(2401).decode('utf-8')
@@ -38,8 +45,8 @@ def main():
         trace_voice_memory('libraries_loaded')
 
         config = PiperConfig.from_dict(json.loads(config_path.read_text(encoding='utf-8')))
-        if (config.speaker_id_map.get('F') != FEMALE_SPEAKER
-                or config.num_speakers != 2 or config.sample_rate != SAMPLE_RATE):
+        if (config.num_speakers != speakers or config.sample_rate != SAMPLE_RATE
+                or language == 'es' and config.speaker_id_map.get('F') != speaker):
             return 1
         options = rt.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1
@@ -52,7 +59,7 @@ def main():
             str(model), sess_options=options, providers=['CPUExecutionProvider']), config=config)
         trace_voice_memory('model_ready')
         trace_voice_memory('phonemizing')
-        chunks = prepare_voice_chunks(voice, text)
+        chunks = prepare_voice_chunks(voice, text, language)
         if not chunks:
             return 1
         trace_voice_memory('phonemes_ready')
@@ -60,7 +67,7 @@ def main():
         output = io.BytesIO()
         frames = 0
         previous_chunk = []
-        synthesis = SynthesisConfig(speaker_id=FEMALE_SPEAKER)
+        synthesis = SynthesisConfig(speaker_id=speaker)
         with wave.open(output, 'wb') as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)

@@ -48,6 +48,7 @@ def main():
     parser.add_argument('--output', type=Path, default=root / 'tmp' / 'isa-piper-female-sample.wav')
     parser.add_argument('--model-dir', type=Path, default=root / 'models' / 'piper-sharvard')
     parser.add_argument('--runs', type=int, default=1)
+    parser.add_argument('--language', choices=('es', 'en'), default='es')
     args = parser.parse_args()
     if not 1 <= len(args.text.strip()) <= 600:
         parser.error('El texto debe tener entre 1 y 600 caracteres.')
@@ -74,7 +75,7 @@ def profile_once(root, args):
     try:
         result = subprocess.run(
             [sys.executable, '-X', 'utf8', '-c', WRAPPER,
-             str(root / 'api' / 'services' / 'voice_worker.py'), str(args.model_dir)],
+             str(root / 'api' / 'services' / 'voice_worker.py'), str(args.model_dir), args.language],
             input=args.text.encode('utf-8'), capture_output=True, timeout=45,
         )
     except subprocess.TimeoutExpired:

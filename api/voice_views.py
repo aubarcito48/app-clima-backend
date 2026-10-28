@@ -35,13 +35,17 @@ def voice(request):
         payload = json.loads(body, object_pairs_hook=_unique_object)
     except (ValueError, UnicodeDecodeError, RecursionError):
         payload = None
-    text = payload.get('texto') if isinstance(payload, dict) and set(payload) == {'texto'} else None
+    valid = isinstance(payload, dict) and 'texto' in payload and set(payload) <= {'texto', 'idioma'}
+    text = payload.get('texto') if valid else None
+    language = payload.get('idioma', 'es') if valid else None
+    if not isinstance(language, str) or language not in {'es', 'en'}:
+        return error_response('ENTRADA_INVALIDA', 'Idioma no admitido.', status=400)
     if (not isinstance(text, str) or not 1 <= len(text.strip()) <= MAX_TEXT
             or len(text) > MAX_TEXT or any(unicodedata.category(char) in {'Cc', 'Cf', 'Cs'}
                                          and char not in '\n\r\t' for char in text)):
         return error_response('ENTRADA_INVALIDA', 'Enviá entre 1 y 600 caracteres de texto.', status=400)
     try:
-        audio = synthesize(text)
+        audio = synthesize(text) if language == 'es' else synthesize(text, language='en')
     except VoiceBusy:
         response = error_response('VOZ_OCUPADA', 'Isa está ocupada. Volvé a intentar en unos segundos.', status=429)
         response['Retry-After'] = '5'

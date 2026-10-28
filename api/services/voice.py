@@ -22,14 +22,16 @@ class VoiceBusy(VoiceUnavailable):
     pass
 
 
-def synthesize(text):
+def synthesize(text, language='es'):
+    if language not in {'es', 'en'}:
+        raise VoiceUnavailable()
     if not _gate.acquire(blocking=False):
         raise VoiceBusy()
     try:
         trace_voice_memory('request_start')
         result = subprocess.run(
             [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('voice_worker.py')),
-             str(settings.ISA_MODEL_DIR)],
+             str(settings.ISA_MODEL_DIR), language],
             input=text.encode('utf-8'), stdout=subprocess.PIPE, timeout=45,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )

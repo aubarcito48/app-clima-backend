@@ -7,20 +7,22 @@ CELSIUS = re.compile(r'(?<![\w.,])([+−-]?\d+(?:[.,]\d+)?)\s*[°º]\s*C(?!\w)',
 KILOMETERS_PER_HOUR = re.compile(r'(?<![^\W\d_])km\s*/\s*h(?!\w)', re.IGNORECASE)
 
 
-def speech_text(text):
+def speech_text(text, language='es'):
     def degrees(match):
         number = match.group(1)
         unit = 'grado' if re.fullmatch(r'[+−-]?1(?:[.,]0+)?', number) else 'grados'
+        if language == 'en':
+            unit = 'degree' if unit == 'grado' else 'degrees'
         return f'{number} {unit}'
     text = CELSIUS.sub(degrees, text)
     def speed_unit(match):
         separator = ' ' if match.start() and text[match.start() - 1].isdigit() else ''
-        return separator + 'kilómetros por hora'
+        return separator + ('kilometers per hour' if language == 'en' else 'kilómetros por hora')
     return KILOMETERS_PER_HOUR.sub(speed_unit, text)
 
 
-def prepare_voice_chunks(voice, text):
-    return [chunk for sentence in voice.phonemize(speech_text(text))
+def prepare_voice_chunks(voice, text, language='es'):
+    return [chunk for sentence in voice.phonemize(speech_text(text, language))
             for chunk in split_voice_phonemes(sentence)]
 
 

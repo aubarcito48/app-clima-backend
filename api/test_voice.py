@@ -24,6 +24,19 @@ def sample_wav():
 
 
 class VoiceEndpointTests(SimpleTestCase):
+    @patch('api.voice_views.synthesize', return_value=sample_wav())
+    def test_english_selects_the_fixed_english_voice(self, synth):
+        response = self.post({'texto': 'Wear a light jacket.', 'idioma': 'en'})
+        self.assertEqual(response.status_code, 200)
+        synth.assert_called_once_with('Wear a light jacket.', language='en')
+
+    @patch('api.voice_views.synthesize')
+    def test_language_cannot_select_arbitrary_models(self, synth):
+        for language in ('fr', '../model', '', None, [], {}, 1):
+            with self.subTest(language=language):
+                self.assertEqual(self.post({'texto': 'Hello', 'idioma': language}).status_code, 400)
+        synth.assert_not_called()
+
     def post(self, payload):
         return self.client.post('/api/v1/voz/', json.dumps(payload), content_type='application/json')
 
@@ -79,6 +92,12 @@ class VoiceEndpointTests(SimpleTestCase):
 
 @override_settings(ISA_MODEL_DIR=Path('models/test-only'))
 class VoiceWorkerTests(SimpleTestCase):
+    @patch('api.services.voice.subprocess.run')
+    def test_english_language_reaches_the_worker(self, run):
+        run.return_value = SimpleNamespace(returncode=0, stdout=sample_wav())
+        synthesize('Wear a jacket.', language='en')
+        self.assertEqual(run.call_args.args[0][-1], 'en')
+
     @patch('api.services.voice.subprocess.run')
     def test_bounded_worker_receives_text_via_stdin_without_shell(self, run):
         run.return_value = SimpleNamespace(returncode=0, stdout=sample_wav())
@@ -151,6 +170,11 @@ class VoiceChunkTests(SimpleTestCase):
 
 
 class VoicePronunciationTests(SimpleTestCase):
+    def test_english_units_are_expanded_without_changing_display_text(self):
+        self.assertEqual(speech_text('19 °C and wind at 5 km/h.', 'en'),
+                         '19 degrees and wind at 5 kilometers per hour.')
+        self.assertEqual(speech_text('1°C', 'en'), '1 degree')
+
     def test_celsius_is_spoken_without_the_letter_c(self):
         for original, spoken in [('19°C', '19 grados'), ('19 °C', '19 grados'),
                                  ('9,5 °C', '9,5 grados'), ('-3°C', '-3 grados'),
