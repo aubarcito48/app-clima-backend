@@ -1,10 +1,21 @@
 """Bound Piper phoneme groups while preserving compound symbols and words."""
 
+import re
+
 MAX_CHUNK_PHONEMES = 64
+CELSIUS = re.compile(r'(?<![\w.,])([+−-]?\d+(?:[.,]\d+)?)\s*[°º]\s*C(?!\w)', re.IGNORECASE)
+
+
+def speech_text(text):
+    def degrees(match):
+        number = match.group(1)
+        unit = 'grado' if re.fullmatch(r'[+−-]?1(?:[.,]0+)?', number) else 'grados'
+        return f'{number} {unit}'
+    return CELSIUS.sub(degrees, text)
 
 
 def prepare_voice_chunks(voice, text):
-    return [chunk for sentence in voice.phonemize(text)
+    return [chunk for sentence in voice.phonemize(speech_text(text))
             for chunk in split_voice_phonemes(sentence)]
 
 

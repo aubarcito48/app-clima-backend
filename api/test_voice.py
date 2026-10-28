@@ -9,7 +9,7 @@ import wave
 from django.test import SimpleTestCase, override_settings
 
 from .services.voice import VoiceBusy, VoiceUnavailable, _gate, synthesize
-from .services.voice_chunks import MAX_CHUNK_PHONEMES, prepare_voice_chunks, split_voice_phonemes
+from .services.voice_chunks import MAX_CHUNK_PHONEMES, prepare_voice_chunks, speech_text, split_voice_phonemes
 from .services.voice_memory import memory_snapshot, trace_voice_memory
 
 
@@ -122,7 +122,7 @@ class VoiceChunkTests(SimpleTestCase):
         pronunciation = 'nwˈeβe pˈunto noβˈenta i θˈinko ɡɾˈaðos θˈelsjus '
         tokenizer.phonemize.return_value = [list(pronunciation * 2)]
         chunks = prepare_voice_chunks(tokenizer, '9.95 °C')
-        tokenizer.phonemize.assert_called_once_with('9.95 °C')
+        tokenizer.phonemize.assert_called_once_with('9.95 grados')
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(chunk) <= MAX_CHUNK_PHONEMES for chunk in chunks))
         self.assertEqual(' '.join(''.join(chunk) for chunk in chunks), (pronunciation * 2).strip())
@@ -148,6 +148,22 @@ class VoiceChunkTests(SimpleTestCase):
         phonemes = ['a̪'] * (MAX_CHUNK_PHONEMES + 5)
         chunks = list(split_voice_phonemes(phonemes))
         self.assertEqual([symbol for chunk in chunks for symbol in chunk], phonemes)
+
+
+class VoicePronunciationTests(SimpleTestCase):
+    def test_celsius_is_spoken_without_the_letter_c(self):
+        for original, spoken in [('19°C', '19 grados'), ('19 °C', '19 grados'),
+                                 ('9,5 °C', '9,5 grados'), ('-3°C', '-3 grados'),
+                                 ('−3 °C', '−3 grados'), ('25ºC.', '25 grados.'),
+                                 ('1 °C', '1 grado'), ('1.0°C', '1.0 grado')]:
+            with self.subTest(original=original):
+                self.assertEqual(speech_text(original), spoken)
+
+    def test_regular_text_and_other_units_are_preserved(self):
+        text = 'En Córdoba: viento de 19 km/h, humedad del 80 % y calle C.'
+        self.assertEqual(speech_text(text), text)
+        self.assertEqual(speech_text('Llevá abrigo con 19 °C; después 25 °C.'),
+                         'Llevá abrigo con 19 grados; después 25 grados.')
 
 
 class VoiceMemoryTests(SimpleTestCase):
