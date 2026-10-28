@@ -28,13 +28,18 @@ No requiere otra API key. Dora no tiene una variante cordobesa documentada.
 .venv\Scripts\python.exe scripts/install_voice.py
 ```
 
-Para reutilizar los modelos descargados de Aubar:
+Para reutilizar una carpeta que ya contenga el modelo INT8 y las voces:
 
 ```powershell
 .venv\Scripts\python.exe scripts/install_voice.py --from-dir ../../botbar/models/kokoro-v1.0
 ```
 
 El instalador verifica tamaño y SHA256. Los modelos quedan fuera de Git.
+Se usa `kokoro-v1.0.int8.onnx` (92.361.271 bytes) de la versión
+[model-files-v1.0](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0),
+con la misma voz femenina `ef_dora`. El modelo FP32 antiguo no se usa como fallback.
+La carpeta original de Aubar puede tener solo FP32: en ese caso ejecutá el
+instalador sin `--from-dir` para descargar INT8.
 `ISA_MODEL_DIR` permite configurar otra carpeta (usá también `--target` al instalar).
 Reiniciá Django después de instalar. En otro servidor hay que instalar las dependencias
 y modelos allí; la instalación local no los publica.
@@ -46,6 +51,42 @@ No guarda texto ni audio y no realiza descargas durante la consulta. El worker c
 el modelo en cada petición para poder terminarlo al superar el tiempo máximo.
 Para despliegues públicos, aplicá límites de solicitudes en el proxy como en el resto de la API.
 El clima sigue funcionando aunque la voz no esté instalada.
+
+### Memoria y despliegue de la voz
+
+El worker procesa el texto completo en fragmentos de hasta 80 caracteres,
+prefiriendo puntuación y espacios. Une los fragmentos en un solo WAV de 24 kHz,
+con pausas de 80 ms. Conserva Dora, español y velocidad 0,95. Libera los arrays
+de cada fragmento, usa un hilo de ONNX y desactiva su arena y patrón de memoria.
+El proceso termina al finalizar cada consulta; los límites de 600 caracteres,
+90 segundos de audio y 45 segundos de ejecución siguen vigentes.
+
+Build Command de Render, ejecutado desde la raíz del backend:
+
+```sh
+pip install -r requirements.txt && pip install gunicorn && pip install -r requirements-voice.txt && python scripts/install_voice.py
+```
+
+Conservar un solo worker de Gunicorn; el bloqueo de síntesis es por proceso.
+No requiere cambios en el frontend. Un redeploy ejecuta el instalador y descarga
+el nuevo modelo verificado. Los archivos FP32 que puedan quedar en disco no se cargan.
+
+Prueba real opcional (requiere las dependencias y modelos instalados):
+
+```powershell
+.venv\Scripts\python.exe scripts/profile_voice.py
+```
+
+En Linux/Render: `python scripts/profile_voice.py`. Informa el pico RSS del proceso
+de voz y guarda `tmp/isa-int8-sample.wav`; `--text` permite probar otros consejos.
+No mide Django, Gunicorn ni la memoria total del contenedor. En Windows, el consejo
+de muestra de 397 caracteres tuvo un pico aproximado de 306 MiB, frente a 863 MiB
+en la prueba FP32 de longitud comparable. No garantiza entrar en 512 MB en Linux:
+el despliegue debe validarse con consejos largos, concurrencia y el tiempo máximo.
+La prueba local de 600 caracteres tuvo un pico de 334 MiB y demoró unos 37 segundos;
+el consejo de muestra demoró unos 21 segundos. Una CPU más limitada puede exceder
+los 45 segundos aunque la memoria alcance; en ese caso se debe revisar la ejecución
+de voz antes de dar por resuelto el despliegue.
 
 ## API y pruebas
 

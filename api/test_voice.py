@@ -9,6 +9,7 @@ import wave
 from django.test import SimpleTestCase, override_settings
 
 from .services.voice import VoiceBusy, VoiceUnavailable, _gate, synthesize
+from .services.voice_chunks import MAX_CHUNK_CHARACTERS, split_voice_text
 
 
 def sample_wav():
@@ -112,3 +113,24 @@ class VoiceWorkerTests(SimpleTestCase):
             run.assert_not_called()
         finally:
             _gate.release()
+
+
+class VoiceChunkTests(SimpleTestCase):
+    def test_preserves_all_words_accents_numbers_and_decimals_in_long_advice(self):
+        text = ('En Córdoba hacen 10.5 °C y la humedad es del 94 %. '
+                'Llevá una campera ligera; por la tarde podés quitarte una capa. ' * 5)[:600]
+        chunks = list(split_voice_text(text))
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(0 < len(chunk) <= MAX_CHUNK_CHARACTERS for chunk in chunks))
+        self.assertEqual(' '.join(chunks), ' '.join(text.split()))
+        self.assertTrue(any('10.5' in chunk for chunk in chunks))
+
+    def test_unbroken_input_is_also_bounded_and_never_truncated(self):
+        text = 'á' * 600
+        chunks = list(split_voice_text(text))
+        self.assertEqual(''.join(chunks), text)
+        self.assertTrue(all(len(chunk) <= MAX_CHUNK_CHARACTERS for chunk in chunks))
+
+    def test_short_text_and_whitespace(self):
+        self.assertEqual(list(split_voice_text('  Hola, Isa.  ')), ['Hola, Isa.'])
+        self.assertEqual(list(split_voice_text('   ')), [])

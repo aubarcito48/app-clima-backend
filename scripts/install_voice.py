@@ -1,4 +1,4 @@
-"""Instala modelos verificados; --from-dir reutiliza la descarga de Aubar."""
+"""Instala Kokoro INT8 y Dora con tamaño y SHA256 verificados."""
 
 import argparse
 import hashlib
@@ -8,7 +8,7 @@ import urllib.request
 
 
 ASSETS = (
-    ('kokoro-v1.0.onnx', 325532387, '7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5'),
+    ('kokoro-v1.0.int8.onnx', 92361271, '6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb'),
     ('voices-v1.0.bin', 28214398, 'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d'),
 )
 BASE_URL = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
