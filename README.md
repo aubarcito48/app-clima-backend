@@ -11,8 +11,8 @@ repetir todas las mediciones, saludos y despedidas. Isa lee el mismo texto compl
 Las respuestas que exceden los límites se consideran no disponibles; no se cortan
 frases a mitad ni se hace otra llamada a Groq. Se conserva el presupuesto de tokens
 de razonamiento del modelo: la brevedad se controla por instrucciones y validación.
-Esto reduce la duración del audio, pero no garantiza resolver por sí solo el pico
-de memoria de la primera generación de Kokoro en Render.
+La brevedad reduce la duración del audio que genera Piper y el tiempo de espera
+antes de que Isa empiece a hablar.
 
 ## Ejecución local
 
@@ -45,8 +45,8 @@ Verifica tamaño y SHA256 antes de publicar cada archivo. Quedan fuera de Git en
 `python scripts/install_voice.py --from-dir RUTA`.
 
 `ISA_MODEL_DIR` permite usar otro directorio; el instalador acepta `--target`.
-Si estaba configurado con una carpeta de Kokoro, debe apuntar a la nueva carpeta
-de Piper o quedar vacío para usar el valor predeterminado. Reiniciá Django después
+Debe apuntar a la carpeta de Piper o quedar vacío para usar el valor predeterminado.
+Reiniciá Django después
 de instalar. La instalación local no instala la voz en otro servidor.
 
 ### Síntesis y límites
@@ -78,8 +78,7 @@ pip install -r requirements.txt && pip install gunicorn && pip install -r requir
 ```
 
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
-Build Command instala ahora Piper y sus archivos. Los modelos antiguos pueden
-permanecer en disco, pero el worker solo carga Sharvard. No requiere cambios del
+Build Command instala Piper y sus archivos; el worker carga Sharvard. No requiere cambios del
 frontend ni otra API key. Para despliegues públicos, aplicar los límites de
 solicitudes del proxy como para el resto de la API.
 
@@ -101,7 +100,9 @@ concurrencia y arranques en frío.
 Medición local en Windows: 20 workers consecutivos con el mismo consejo de 161
 caracteres dieron un pico RSS máximo de 200,8 MiB, p50 de 5,58 segundos y p95 de
 5,71 segundos, incluyendo arranque y carga del modelo. No es el p95 del endpoint
-publicado ni del flujo completo del clima. La validación en Render sigue pendiente.
+publicado ni del flujo completo del clima. La generación de voz con Piper ya fue
+comprobada en el despliegue gratuito de Render; el rendimiento bajo carga debe
+medirse en ese entorno.
 
 En Linux se registran eventos `isa_memory` con `engine: piper`, antes/después de
 cargar el modelo, fonemizar e inferir. `rss_mib` y `peak_rss_mib` describen el
