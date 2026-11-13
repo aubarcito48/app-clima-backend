@@ -15,10 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from api.services.voice_chunks import prepare_voice_chunks
 from api.services.voice_memory import trace_voice_memory
 
-MODEL_NAME = 'es_AR-daniela-high.onnx'
+MODEL_NAME = 'es_ES-sharvard-medium.onnx'
 SAMPLE_RATE = 22050
 VOICES = {
-    'es': (MODEL_NAME, 0, 1),
+    'es': (MODEL_NAME, 1, 2),
     'en': ('en_US-lessac-medium.onnx', 0, 1),
 }
 
@@ -45,7 +45,8 @@ def main():
         trace_voice_memory('libraries_loaded')
 
         config = PiperConfig.from_dict(json.loads(config_path.read_text(encoding='utf-8')))
-        if config.num_speakers != speakers or config.sample_rate != SAMPLE_RATE:
+        if (config.num_speakers != speakers or config.sample_rate != SAMPLE_RATE
+                or language == 'es' and config.speaker_id_map.get('F') != speaker):
             return 1
         options = rt.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1

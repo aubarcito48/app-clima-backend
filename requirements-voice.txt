@@ -1,4 +1,4 @@
-# Voz femenina de Isa: Piper Daniela (Argentina); Lessac para inglés.
+# Voz femenina de Isa: Piper Sharvard, hablante F.
 piper-tts==1.8.0
 onnxruntime==1.31.1
 numpy==2.5.4
