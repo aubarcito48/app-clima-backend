@@ -30,9 +30,9 @@ El script crea `.env` con un secreto de Django y conserva el archivo si ya exist
 
 ## Voz de Isa
 
-Se usa **Piper 1.8.0**, modelo `es_ES-sharvard-medium`, hablante femenino
-`F = 1`, español de España. El modelo contiene dos hablantes; el worker valida
-esa configuración y fija el femenino. No acepta una voz elegida desde el cliente.
+Se usa **Piper 1.8.0**, modelo femenino argentino `es_AR-daniela-high`,
+con una sola hablante (`speaker_id = 0`). El worker valida la cantidad de hablantes
+y frecuencia de audio. No acepta una voz elegida desde el cliente.
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -r requirements-voice.txt
@@ -40,7 +40,7 @@ esa configuración y fija el femenino. No acepta una voz elegida desde el client
 ```
 
 El instalador descarga modelo, configuración y MODEL_CARD desde una revisión fija
-de [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/es/es_ES/sharvard/medium).
+de [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/2f358b6a560e3a913ebf509b2f3344f20b367f94/es/es_AR/daniela/high).
 Verifica tamaño y SHA256 antes de publicar cada archivo. Quedan fuera de Git en
 `models/piper-sharvard`. Para reutilizar otra descarga de estos mismos archivos:
 `python scripts/install_voice.py --from-dir RUTA`.
@@ -54,7 +54,9 @@ de instalar. La instalación local no instala la voz en otro servidor.
 
 También se instala `en_US-lessac-medium`, voz femenina en inglés de Estados Unidos.
 Se carga únicamente el modelo del idioma solicitado, con la misma concurrencia de uno.
-El directorio conserva su nombre `models/piper-sharvard` y contiene ambos modelos.
+El directorio conserva el nombre histórico `models/piper-sharvard` para no cambiar
+`ISA_MODEL_DIR` en los despliegues; contiene Daniela y Lessac. Archivos de Sharvard
+que ya existan localmente no se borran, pero el worker español ya no los utiliza.
 
 `POST /api/v1/voz/`, JSON `{"texto":"consejo exacto de Groq","idioma":"es"}`, devuelve
 `audio/wav`, PCM16 mono a 22.050 Hz y sin caché. La envolvente del frontend lee
@@ -89,7 +91,7 @@ python -m pip install --upgrade pip==26.2.2 && python -m pip install -r requirem
 ```
 
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
-Build Command instala ambos modelos; el worker carga Sharvard o Lessac según el idioma.
+Build Command instala ambos modelos; el worker carga Daniela o Lessac según el idioma.
 No requiere otra API key. Para despliegues públicos, aplicar los límites de
 solicitudes del proxy como para el resto de la API.
 
@@ -104,16 +106,23 @@ En Linux: `python scripts/profile_voice.py --runs 20`. Cada ejecución arranca u
 worker nuevo: mide carga del modelo y síntesis, sin Groq ni transporte HTTP.
 Informa pico RSS del worker, p50 y p95 (rango más cercano) y guarda una muestra en
 `tmp/isa-piper-female-sample.wav`. `--text` permite probar otros consejos.
+Con Daniela high, una prueba local en Windows del worker real con el consejo de
+161 caracteres tardó 10,53 segundos y tuvo un pico RSS de 237,8 MiB. El WAV duró
+8,83 segundos. Es una sola medición, no un p95 representativo ni una medición de
+Render. Las 24 pruebas aisladas de voz pasaron y también se generó un WAV inglés
+real con Lessac después del cambio.
+
 El pico RSS del proceso no es el consumo total del contenedor. Las medidas locales
 no garantizan entrar en 512 MB en Linux: validar Render con textos variados,
 concurrencia y arranques en frío.
 
-Medición local en Windows: 20 workers consecutivos con el mismo consejo de 161
+Medición histórica de Sharvard en Windows: 20 workers consecutivos con el mismo consejo de 161
 caracteres dieron un pico RSS máximo de 200,8 MiB, p50 de 5,58 segundos y p95 de
 5,71 segundos, incluyendo arranque y carga del modelo. No es el p95 del endpoint
-publicado ni del flujo completo del clima. La generación de voz con Piper ya fue
-comprobada en el despliegue gratuito de Render; el rendimiento bajo carga debe
-medirse en ese entorno.
+publicado ni del flujo completo del clima. La generación anterior con Sharvard fue
+comprobada en el despliegue gratuito de Render. Daniela requiere instalar el modelo
+durante el próximo build y medir allí memoria y latencia antes de dar su rendimiento
+por validado. Reiniciar sin instalar sus archivos devuelve 503 para español.
 
 En Linux se registran eventos `isa_memory` con `engine: piper`, antes/después de
 cargar el modelo, fonemizar e inferir. `rss_mib` y `peak_rss_mib` describen el
@@ -126,12 +135,10 @@ de Piper. No se registran sus contenidos, texto, audio ni credenciales.
 - Motor [Piper / Open Home Foundation](https://github.com/OHF-Voice/piper1-gpl), GPL-3.0.
 - Modelo inglés [Lessac medium](https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/lessac/medium/MODEL_CARD),
   corpus Catherine Byers / Lessac, con licencia de uso no comercial indicada en su ficha.
-- Modelo Sharvard medium de [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/raw/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/es/es_ES/sharvard/medium/MODEL_CARD);
-  conservar el MODEL_CARD distribuido con los archivos.
-- Corpus Sharvard: Vincent Aubanel, Maria Luisa Garcia Lecumberri y Martin Cooke,
-  LISTA Consortium (2014), [doi:10.7488/ds/75](https://doi.org/10.7488/ds/75).
-  El MODEL_CARD indica licencia del dataset
-  [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
+- Modelo argentino [Daniela high, entrenado por larcanio](https://huggingface.co/rhasspy/piper-voices/blob/2f358b6a560e3a913ebf509b2f3344f20b367f94/es/es_AR/daniela/high/MODEL_CARD),
+  corpus [OpenSLR 61](https://www.openslr.org/61/), licencia del dataset
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+  Conservar el MODEL_CARD distribuido con los archivos.
 
 ## API y pruebas
 
