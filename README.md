@@ -4,6 +4,30 @@ API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones,
 
 Frontend: [StitchWeather](https://github.com/aubarcito48/app-clima).
 
+## Interpretación de Isa por fragmentos
+
+Groq devuelve JSON con `texto` y `segmentos`: entre uno y cuatro fragmentos que,
+unidos con un espacio, deben reproducir exactamente el consejo. Cada fragmento
+elige `gesture` del catálogo real (`isa-awake`, `isa-right`, `isa-down`), `speed`
+entre 0.8 y 1.2, `energy` entre 0.65 y 1.2 y `pause_ms` entre 0 y 600.
+No se importan expresiones de Aubar ni del antiguo avatar SVG.
+
+`recomendacion.segmentos` es opcional para consumidores anteriores. Groq dispone
+de al menos 512 tokens para consejo y dirección (1024 con GPT-OSS); el consejo
+conserva el límite de 280 caracteres y 40 palabras. Los planes inválidos no se
+ejecutan. El frontend también puede leer recomendaciones anteriores sin plan.
+
+`POST /api/v1/voz/` admite `segmentos` opcionales con el mismo texto completo
+normalizado, hasta seis para incluir saludo y despedida. Piper carga un único
+modelo en un worker y sintetiza cada fragmento con su ritmo, volumen y pausa.
+El WAV sigue siendo PCM16 mono y lleva un chunk RIFF opcional `isac` con
+`from`, `speech_end`, `until` (segundos calculados a partir de muestras reales)
+y `gesture`. No se necesitan cabeceras CORS nuevas ni una segunda petición.
+Se mantienen los límites de concurrencia, duración y tiempo de síntesis.
+
+La energía controla volumen, no una emoción vocal nativa. Las miradas usan las
+animaciones existentes; los tiempos son por fragmento, no por fonema.
+
 Los consejos de Groq están limitados a 280 caracteres (incluidos espacios) y
 40 palabras. El prompt pide hasta dos frases: ropa recomendada y motivo climático,
 con una adaptación para más tarde cuando el pronóstico lo justifique. Evita

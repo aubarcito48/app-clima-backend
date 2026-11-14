@@ -285,6 +285,18 @@
         }
       ]
     },
+    "segmentoIsa": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "gesture": { "enum": ["isa-awake", "isa-right", "isa-down"] },
+        "speed": { "type": "number", "minimum": 0.8, "maximum": 1.2 },
+        "energy": { "type": "number", "minimum": 0.65, "maximum": 1.2 },
+        "pause_ms": { "type": "integer", "minimum": 0, "maximum": 600 }
+      },
+      "required": ["text", "gesture", "speed", "energy", "pause_ms"]
+    },
     "recomendacion": {
       "oneOf": [
         {
@@ -292,6 +304,10 @@
           "properties": {
             "estado": {
               "const": "disponible"
+            },
+            "segmentos": {
+              "type": "array", "minItems": 1, "maxItems": 4,
+              "items": { "$ref": "#/$defs/segmentoIsa" }
             },
             "texto": {
               "type": "string",

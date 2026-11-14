@@ -146,7 +146,7 @@ class RecommendationGenerationTests(SimpleTestCase):
         self.assertEqual(request.headers["Authorization"], "Bearer DUMMY-GROQ-KEY")
         body = json.loads(request.content)
         self.assertEqual(body["model"], "test-chat-model")
-        self.assertEqual(body["max_completion_tokens"], 160)
+        self.assertEqual(body["max_completion_tokens"], 512)
         self.assertEqual(body["n"], 1)
         self.assertFalse(body["stream"])
         self.assertEqual(body["tool_choice"], "none")

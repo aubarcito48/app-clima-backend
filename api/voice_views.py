@@ -8,6 +8,7 @@ from django.views.decorators.cache import never_cache
 
 from .responses import error_response
 from .services.voice import MAX_TEXT, VoiceBusy, VoiceUnavailable, synthesize
+from .services.isa_performance import read_segments
 
 
 def _unique_object(pairs):
@@ -35,7 +36,7 @@ def voice(request):
         payload = json.loads(body, object_pairs_hook=_unique_object)
     except (ValueError, UnicodeDecodeError, RecursionError):
         payload = None
-    valid = isinstance(payload, dict) and 'texto' in payload and set(payload) <= {'texto', 'idioma'}
+    valid = isinstance(payload, dict) and 'texto' in payload and set(payload) <= {'texto', 'idioma', 'segmentos'}
     text = payload.get('texto') if valid else None
     language = payload.get('idioma', 'es') if valid else None
     if not isinstance(language, str) or language not in {'es', 'en'}:
@@ -44,8 +45,14 @@ def voice(request):
             or len(text) > MAX_TEXT or any(unicodedata.category(char) in {'Cc', 'Cf', 'Cs'}
                                          and char not in '\n\r\t' for char in text)):
         return error_response('ENTRADA_INVALIDA', 'Enviá entre 1 y 600 caracteres de texto.', status=400)
+    options = {} if language == 'es' else {'language': 'en'}
+    if 'segmentos' in payload:
+        try:
+            options['segments'] = read_segments(payload['segmentos'], text, max_segments=6)
+        except (ValueError, TypeError, OverflowError):
+            return error_response('ENTRADA_INVALIDA', 'Interpretación de Isa inválida.', status=400)
     try:
-        audio = synthesize(text) if language == 'es' else synthesize(text, language='en')
+        audio = synthesize(text, **options)
     except VoiceBusy:
         response = error_response('VOZ_OCUPADA', 'Isa está ocupada. Volvé a intentar en unos segundos.', status=429)
         response['Retry-After'] = '5'

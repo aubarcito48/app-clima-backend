@@ -14,6 +14,7 @@ for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from api.services.voice_chunks import prepare_voice_chunks
 from api.services.voice_memory import trace_voice_memory
+from api.services.isa_performance import append_timeline, read_segments
 
 MODEL_NAME = 'es_ES-sharvard-medium.onnx'
 SAMPLE_RATE = 22050
@@ -34,9 +35,16 @@ def main():
     config_path = model_dir / (model_name + '.json')
     if not model.is_file() or not config_path.is_file():
         return 1
-    text = sys.stdin.buffer.read(2401).decode('utf-8')
+    performance = '--performance' in sys.argv[3:]
+    raw = sys.stdin.buffer.read(8193 if performance else 2401).decode('utf-8')
+    payload = json.loads(raw) if performance else None
+    text = payload['texto'] if performance else raw
     if not 1 <= len(text.strip()) <= 600 or '\x00' in text:
         return 1
+    segments = read_segments(payload['segmentos'], text, max_segments=6) if performance else [
+        {'text': text, 'gesture': 'isa-awake', 'speed': 1, 'energy': 1, 'pause_ms': 0},
+    ]
+    timeline = []
     with redirect_stdout(sys.stderr):
         import numpy as np
         import onnxruntime as rt
@@ -59,40 +67,52 @@ def main():
             str(model), sess_options=options, providers=['CPUExecutionProvider']), config=config)
         trace_voice_memory('model_ready')
         trace_voice_memory('phonemizing')
-        chunks = prepare_voice_chunks(voice, text, language)
-        if not chunks:
-            return 1
-        trace_voice_memory('phonemes_ready')
-
         output = io.BytesIO()
         frames = 0
-        previous_chunk = []
-        synthesis = SynthesisConfig(speaker_id=speaker)
         with wave.open(output, 'wb') as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)
             wav.setframerate(SAMPLE_RATE)
-            for index, chunk in enumerate(chunks):
-                ids = voice.phonemes_to_ids(chunk)
-                trace_voice_memory('inference_start', index, tokens=len(ids))
-                samples = voice.phoneme_ids_to_audio(ids, synthesis)
-                trace_voice_memory('inference_done', index)
-                if not len(samples) or not np.isfinite(samples).all():
+            for segment in segments:
+                chunks = prepare_voice_chunks(voice, segment['text'], language)
+                if not chunks:
                     return 1
-                pause_ms = 80 if previous_chunk and previous_chunk[-1] in '.!?;:' else 20
-                pause_frames = SAMPLE_RATE * pause_ms // 1000 if frames else 0
-                frames += pause_frames + len(samples)
+                trace_voice_memory('phonemes_ready')
+                start = frames / SAMPLE_RATE
+                previous_chunk = []
+                synthesis = SynthesisConfig(speaker_id=speaker,
+                    length_scale=config.length_scale / segment['speed'])
+                for index, chunk in enumerate(chunks):
+                    ids = voice.phonemes_to_ids(chunk)
+                    trace_voice_memory('inference_start', index, tokens=len(ids))
+                    samples = voice.phoneme_ids_to_audio(ids, synthesis)
+                    trace_voice_memory('inference_done', index)
+                    if not len(samples) or not np.isfinite(samples).all():
+                        return 1
+                    pause_ms = 80 if previous_chunk and previous_chunk[-1] in '.!?;:' else 20
+                    pause_frames = SAMPLE_RATE * pause_ms // 1000 if previous_chunk else 0
+                    frames += pause_frames + len(samples)
+                    if frames > SAMPLE_RATE * 90:
+                        return 1
+                    if pause_frames:
+                        wav.writeframesraw(b'\x00\x00' * pause_frames)
+                    pcm = (np.clip(samples * segment['energy'], -1, 1) * 32767).astype('<i2').tobytes()
+                    wav.writeframesraw(pcm)
+                    del samples, pcm
+                    trace_voice_memory('chunk_done', index)
+                    previous_chunk = chunk
+                speech_end = frames / SAMPLE_RATE
+                pause_frames = SAMPLE_RATE * segment['pause_ms'] // 1000
+                frames += pause_frames
                 if frames > SAMPLE_RATE * 90:
                     return 1
                 if pause_frames:
                     wav.writeframesraw(b'\x00\x00' * pause_frames)
-                pcm = (np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes()
-                wav.writeframesraw(pcm)
-                del samples, pcm
-                trace_voice_memory('chunk_done', index)
-                previous_chunk = chunk
+                timeline.append({'from': start, 'speech_end': speech_end,
+                                 'until': frames / SAMPLE_RATE, 'gesture': segment['gesture']})
     trace_voice_memory('complete')
-    sys.stdout.buffer.write(output.getvalue())
+    audio = output.getvalue()
+    sys.stdout.buffer.write(append_timeline(audio, timeline) if performance else audio)
     return 0
 
 
