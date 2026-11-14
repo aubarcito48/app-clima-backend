@@ -19,10 +19,22 @@ MAX_FORECAST_CONTEXT_INTERVALS = 8
 MAX_CONTEXT_CHARACTERS = 12000
 MAX_OUTPUT_CHARACTERS = 280
 MAX_OUTPUT_WORDS = 40
+SPANISH_STYLE = """Usá un tono cercano y práctico, en español rioplatense de Argentina.
+Hablale de vos a la persona y mantené el voseo en todo el consejo: usá, llevá,
+elegí, evitá, sacate. Para recomendar ropa preferí empezar con «Usá»;
+por ejemplo, «Usá una campera liviana», si el clima lo justifica.
+Elegí vocabulario argentino cotidiano: campera, remera, buzo, zapatillas,
+ropa liviana o abrigo. Evitá el tuteo y los giros de España, como «pon»,
+«ponte», «quita la chaqueta», «chaqueta», «jersey» o «cazadora».
+Que suene natural al leerlo en voz alta, sin forzar lunfardo, muletillas,
+«che» ni caricaturas del acento. No imites el origen de la voz sintética."""
+ENGLISH_STYLE = """Use warm, practical, natural English throughout the advice.
+Use everyday clothing vocabulary and direct suggestions such as "Wear a light jacket"
+when justified by the weather. Do not mix in Spanish words or regional verb forms."""
 SYSTEM_PROMPT = f"""Sos un asistente que interpreta el clima para planes cotidianos.
 Priorizá recomendar qué ropa y calzado usar según la temperatura, la sensación
 térmica, el viento y la lluvia informados. Sugerí abrigo, capas o paraguas solo
-cuando los datos lo justifiquen. Usá un tono cercano y práctico, en español rioplatense.
+cuando los datos lo justifiquen. {SPANISH_STYLE}
 Escribí un consejo breve en español en hasta dos frases,
 {MAX_OUTPUT_WORDS} palabras y {MAX_OUTPUT_CHARACTERS} caracteres, incluidos espacios.
 Conservá lo esencial: qué ponerse y el motivo climático; si hay un cambio
@@ -128,7 +140,7 @@ def build_messages(snapshot: WeatherSnapshot, *, language='es'):
         raise InvalidRecommendationContext()
     prompt = SYSTEM_PROMPT
     if language == 'en':
-        prompt = prompt.replace('en español rioplatense', 'en inglés').replace('consejo breve en español', 'consejo breve en inglés')
+        prompt = prompt.replace(SPANISH_STYLE, ENGLISH_STYLE).replace('consejo breve en español', 'consejo breve en inglés')
     return [
         {"role": "system", "content": prompt},
         {"role": "user", "content": serialized},

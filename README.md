@@ -2,6 +2,14 @@
 
 API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones, consulta el clima y pronóstico de OpenWeather, y genera recomendaciones con Groq en español o inglés. No utiliza base de datos.
 
+Los consejos en español usan voseo y vocabulario argentino cotidiano, priorizando
+formas como «Usá una campera liviana», «llevá» y «elegí», sin exagerar el lunfardo.
+Esta dirección de escritura es independiente del origen de la voz de Piper. En
+inglés se reemplaza el bloque de estilo completo para no mezclar vocabulario ni
+formas verbales españolas. El texto y los segmentos de actuación se generan
+juntos: no se reemplazan palabras después de generarlos, preservando su coherencia
+con la síntesis de voz y la animación.
+
 Frontend: [StitchWeather](https://github.com/aubarcito48/app-clima).
 
 ## Interpretación de Isa por fragmentos
