@@ -97,7 +97,7 @@ class OptionalRecognizerTests(SimpleTestCase):
         popen.assert_not_called()
 
 
-@override_settings(ISA_LIP_SYNC='rhubarb', ISA_RHUBARB_PATH=Path('test/rhubarb'))
+@override_settings(ISA_LIP_SYNC='rhubarb', ISA_RHUBARB_PATH=Path('test/rhubarb'), ISA_RHUBARB_TIMEOUT_SECONDS=60)
 class VoiceLipIntegrationTests(SimpleTestCase):
     @patch('api.services.voice.add_lip_sync')
     @patch('api.services.voice.subprocess.run')
@@ -108,7 +108,7 @@ class VoiceLipIntegrationTests(SimpleTestCase):
             self.assertTrue(_gate.locked())
             with self.assertRaises(VoiceBusy):
                 synthesize('Second request')
-            self.assertLessEqual(options['timeout'], 8)
+            self.assertEqual(options['timeout'], 60)
             return audio
         lip.side_effect = recognize
         self.assertEqual(synthesize('Usá abrigo.'), sample_wav())
@@ -122,13 +122,13 @@ class VoiceLipIntegrationTests(SimpleTestCase):
         self.assertEqual(synthesize('Usá abrigo.'), sample_wav())
         lip.assert_not_called()
 
-    @patch('api.services.voice.time.monotonic', side_effect=[0, 42])
+    @override_settings(ISA_RHUBARB_TIMEOUT_SECONDS=25)
     @patch('api.services.voice.add_lip_sync', side_effect=lambda audio, *args, **kwargs: audio)
     @patch('api.services.voice.subprocess.run')
-    def test_long_piper_request_reduces_recognizer_budget(self, run, lip, clock):
+    def test_recognizer_has_its_own_configured_budget_after_piper(self, run, lip):
         run.return_value = SimpleNamespace(returncode=0, stdout=sample_wav())
         synthesize('Usá abrigo.')
-        self.assertEqual(lip.call_args.kwargs['timeout'], 3)
+        self.assertEqual(lip.call_args.kwargs['timeout'], 25)
 
 
 class RuntimeInstallerTests(SimpleTestCase):

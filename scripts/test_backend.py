@@ -32,6 +32,7 @@ def main():
         "GROQ_MAX_COMPLETION_TOKENS": "160",
         "ISA_DIRECTOR": "groq",
         "ISA_LIP_SYNC": "off",
+        "ISA_RHUBARB_TIMEOUT_SECONDS": "60",
         "ISA_RHUBARB_PATH": "",
     })
     # Instalar los bloqueos antes de inicializar Django. Un acceso accidental

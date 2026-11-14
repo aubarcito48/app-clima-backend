@@ -73,7 +73,7 @@ def add_lip_sync(audio, executable, *, timeout):
     No filenames, text, recognizer output or credentials enter application logs.
     """
     started = time.monotonic()
-    peak, stopped = {}, threading.Event()
+    peak, stopped = {'timeout_seconds': round(max(0, timeout), 3)}, threading.Event()
     def sample():
         while not stopped.is_set():
             current = memory_snapshot().get('cgroup_current_mib')

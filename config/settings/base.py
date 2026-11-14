@@ -60,6 +60,7 @@ ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'model
 ISA_LIP_SYNC = os.getenv('ISA_LIP_SYNC', 'off').strip().lower()
 if ISA_LIP_SYNC not in ('off', 'rhubarb'):
     raise ImproperlyConfigured('ISA_LIP_SYNC must be off or rhubarb')
+ISA_RHUBARB_TIMEOUT_SECONDS = env_int('ISA_RHUBARB_TIMEOUT_SECONDS', 60, minimum=1, maximum=60)
 ISA_RHUBARB_PATH = Path(os.getenv('ISA_RHUBARB_PATH', '').strip() or (
     BASE_DIR / 'models' / 'rhubarb' / 'runtime' / ('rhubarb.exe' if os.name == 'nt' else 'rhubarb')
 ))

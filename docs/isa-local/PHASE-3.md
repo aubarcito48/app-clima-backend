@@ -19,9 +19,15 @@ Con `ISA_LIP_SYNC=rhubarb`, la síntesis sigue estos pasos:
 4. Si falta el ejecutable, falla o agota su presupuesto, se devuelve el WAV
    original. No se consulta Groq otra vez ni se pierde el consejo por ese fallo.
 
-Rhubarb dispone de hasta ocho segundos y del tiempo restante del presupuesto de
-45 segundos de síntesis. La espera HTTP del frontend sigue en 50 segundos. Estos
-límites no garantizan rendimiento en CPU limitada. El proceso se mata y recoge
+Después del primer timeout en Render a los ocho segundos, la prueba se amplió:
+Piper conserva sus 45 segundos y Rhubarb dispone de un presupuesto independiente
+de hasta 60 segundos. `ISA_RHUBARB_TIMEOUT_SECONDS` permite elegir de 1 a 60,
+con 60 por defecto. La espera HTTP del frontend es de 120 segundos y el archivo
+`gunicorn.conf.py` fija 130 segundos para el servidor. Si el Start Command o
+`GUNICORN_CMD_ARGS` define un `--timeout` menor, prevalece: usar al menos 130
+para esta prueba. No es necesario ocupar todo ese tiempo: se devuelve el WAV
+apenas termina el análisis. Estos límites no garantizan rendimiento en CPU
+limitada. El proceso se mata y recoge
 al agotar su tiempo. Un OOM que mate el contenedor entero no admite fallback:
 desactivar la variable o revertir el commit si la prueba en Render resulta mal.
 
@@ -78,6 +84,11 @@ observado, no un pico instantáneo garantizado. El RSS del evento pertenece al
 proceso Python que registra; para el consumo total usar los campos `cgroup`.
 No sumar RSS a cgroup. Las mediciones de Piper y Rhubarb son secuenciales: no
 se deben sumar sus máximos como si ambos modelos estuvieran en RAM a la vez.
+
+Los eventos de Rhubarb incluyen `timeout_seconds` para verificar el presupuesto
+activo. La primera prueba en Render terminó por timeout a los 8,081 s, con
+202,5 MiB de máximo observado durante Rhubarb y 314,6 MiB visibles durante Piper:
+se amplió el tiempo para medir si el reconocedor puede completar su trabajo.
 
 Comparar con el máximo de 284,3 MiB observado en las capturas de Piper del
 14/11/2026, límite 512 MiB, y unos 29 s entre inicio y fin de aquella síntesis.

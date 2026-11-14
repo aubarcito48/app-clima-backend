@@ -143,6 +143,11 @@ Si `ISA_LIP_SYNC=rhubarb` está definido durante el build, `install_voice.py`
 instala además el runtime verificado de Rhubarb (con licencia, sin demos/tests).
 Con `off` no lo descarga. Ver [activación, métricas y vuelta atrás](docs/isa-local/PHASE-3.md).
 
+Para el ensayo ampliado, Rhubarb tiene hasta 60 segundos independientes de los
+45 de Piper (`ISA_RHUBARB_TIMEOUT_SECONDS`, entre 1 y 60). El frontend espera
+120 segundos y `gunicorn.conf.py` configura 130. Si el Start Command contiene
+un `--timeout` explícito, usar al menos 130 porque ese argumento prevalece.
+
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
 Build Command instala ambos modelos; el worker carga Sharvard o Lessac según el idioma.
 No requiere otra API key. Para despliegues públicos, aplicar los límites de
