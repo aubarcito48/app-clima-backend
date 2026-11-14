@@ -21,6 +21,11 @@ un consejo nuevo; no cambia un consejo que el navegador ya haya cargado.
 Ver [prueba comparativa y límites](docs/isa-local/PHASE-2.md) y
 [recursos para Gemini](docs/isa-local/GEMINI.md).
 
+La [fase 3: ensayo de Rhubarb](docs/isa-local/PHASE-3.md) se activa aparte con
+`ISA_LIP_SYNC=rhubarb`. Analiza el audio después de que sale Piper y agrega marcas
+opcionales al WAV, con fallback al audio original. Todavía no cambia la animación
+facial: primero se evalúan recursos y después se integran las imágenes de boca.
+
 Groq devuelve JSON con `texto` y `segmentos`: entre uno y cuatro fragmentos que,
 unidos con un espacio, deben reproducir exactamente el consejo. Cada fragmento
 elige `gesture` del catálogo real (`isa-awake`, `isa-right`, `isa-down`), `speed`
@@ -133,6 +138,10 @@ Build Command, ejecutado desde la raíz del backend:
 ```sh
 python -m pip install --upgrade pip==26.2.2 && python -m pip install -r requirements-production.txt && python scripts/install_voice.py
 ```
+
+Si `ISA_LIP_SYNC=rhubarb` está definido durante el build, `install_voice.py`
+instala además el runtime verificado de Rhubarb (con licencia, sin demos/tests).
+Con `off` no lo descarga. Ver [activación, métricas y vuelta atrás](docs/isa-local/PHASE-3.md).
 
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
 Build Command instala ambos modelos; el worker carga Sharvard o Lessac según el idioma.

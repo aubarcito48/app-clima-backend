@@ -5,10 +5,12 @@ import json
 import subprocess
 import sys
 import threading
+import time
 
 from django.conf import settings
 from .voice_memory import trace_voice_memory
 from .isa_performance import read_segments
+from .lip_sync import add_lip_sync
 
 
 _gate = threading.Lock()
@@ -32,6 +34,7 @@ def synthesize(text, language='es', *, segments=None):
     if not _gate.acquire(blocking=False):
         raise VoiceBusy()
     try:
+        started = time.monotonic()
         trace_voice_memory('request_start')
         result = subprocess.run(
             [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('voice_worker.py')),
@@ -45,6 +48,9 @@ def synthesize(text, language='es', *, segments=None):
                 or audio[:4] != b'RIFF' or audio[8:12] != b'WAVE'):
             trace_voice_memory('worker_failed')
             raise VoiceUnavailable()
+        if settings.ISA_LIP_SYNC == 'rhubarb':
+            audio = add_lip_sync(audio, settings.ISA_RHUBARB_PATH,
+                                 timeout=min(8.0, max(0.0, 45 - (time.monotonic() - started))))
         return audio
     except (OSError, subprocess.TimeoutExpired) as exc:
         trace_voice_memory('timeout' if isinstance(exc, subprocess.TimeoutExpired) else 'worker_failed')

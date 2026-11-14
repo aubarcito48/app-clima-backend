@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import urllib.request
@@ -59,6 +60,9 @@ def main():
         finally:
             partial.unlink(missing_ok=True)
     print('Piper instalado: Sharvard (es) y Lessac (en). Reiniciá Django para usar las voces de Isa.')
+    if os.getenv('ISA_LIP_SYNC', 'off').strip().lower() == 'rhubarb':
+        from install_rhubarb import install
+        install()
 
 
 if __name__ == '__main__':

@@ -31,6 +31,8 @@ def main():
         "GROQ_READ_TIMEOUT_SECONDS": "8",
         "GROQ_MAX_COMPLETION_TOKENS": "160",
         "ISA_DIRECTOR": "groq",
+        "ISA_LIP_SYNC": "off",
+        "ISA_RHUBARB_PATH": "",
     })
     # Instalar los bloqueos antes de inicializar Django. Un acceso accidental
     # falla aun si el cliente de proveedor normalmente captura errores de red.

@@ -57,6 +57,12 @@ ISA_DIRECTOR = os.getenv('ISA_DIRECTOR', 'groq').strip().lower()
 if ISA_DIRECTOR not in ('groq', 'local'):
     raise ImproperlyConfigured('ISA_DIRECTOR must be groq or local')
 ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'models' / 'piper-sharvard')
+ISA_LIP_SYNC = os.getenv('ISA_LIP_SYNC', 'off').strip().lower()
+if ISA_LIP_SYNC not in ('off', 'rhubarb'):
+    raise ImproperlyConfigured('ISA_LIP_SYNC must be off or rhubarb')
+ISA_RHUBARB_PATH = Path(os.getenv('ISA_RHUBARB_PATH', '').strip() or (
+    BASE_DIR / 'models' / 'rhubarb' / 'runtime' / ('rhubarb.exe' if os.name == 'nt' else 'rhubarb')
+))
 
 # Límites compartidos por todos los visitantes del proceso, sin confiar en X-Forwarded-For.
 API_RATE_LIMIT_ENABLED = False

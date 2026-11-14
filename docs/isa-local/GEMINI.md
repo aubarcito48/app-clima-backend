@@ -48,5 +48,30 @@ archivos separados, resolución idéntica y nombres descriptivos; no pedir FPS n
 un video largo para este paso. Revisaremos alineación, identidad, cobertura y
 transiciones antes de crear un atlas o recortar bocas.
 
-Rhubarb se evaluará en la fase 3 para obtener formas y tiempos a partir del audio
-de Piper. No crea las imágenes y todavía no es una dependencia del proyecto.
+## Correspondencia para el ensayo con Rhubarb
+
+El ensayo de fase 3 usa Rhubarb 1.14.0 con `phonetic` y las formas extendidas
+G/H/X. Su catálogo tiene seis formas básicas A–F y tres opcionales G/H/X:
+
+| Archivo propuesto | Forma a pedir |
+| --- | --- |
+| `isa-mouth-A.png` | Labios juntos con ligera presión, para m/p/b |
+| `isa-mouth-B.png` | Boca apenas abierta, dientes cercanos |
+| `isa-mouth-C.png` | Apertura media |
+| `isa-mouth-D.png` | Apertura amplia |
+| `isa-mouth-E.png` | Boca un poco redondeada |
+| `isa-mouth-F.png` | Labios fruncidos, redondeados |
+| `isa-mouth-G.png` | Dientes superiores sobre labio inferior |
+| `isa-mouth-H.png` | Lengua elevada detrás de dientes superiores |
+| `isa-mouth-X.png` | Reposo relajado con labios cerrados |
+
+Mantener el mismo rostro y encuadre en todos los archivos. A/X pueden parecerse,
+pero son estados diferentes. B/C/E también deben distinguirse sin mover la cabeza.
+H es opcional: si el estilo no permite ver la lengua, se puede desactivar esa
+forma al configurar el reconocedor, sin inventar una imagen incorrecta.
+
+No son nueve fonemas ni nueve emociones. Son formas visuales que agrupan sonidos;
+la correspondencia acústica en español se revisa escuchando las muestras.
+Ver [catálogo oficial](https://github.com/DanielSWolf/rhubarb-lip-sync#mouth-shapes).
+Rhubarb crea los tiempos para cada audio, no estas imágenes. El ensayo agrega
+las marcas al WAV pero el renderizador actual todavía no las reproduce.
