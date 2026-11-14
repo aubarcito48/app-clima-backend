@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 from .environment import env_int, env_list, env_timeout, required_secret
 
@@ -52,6 +53,9 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "").strip() or "openai/gpt-oss-20b"
 GROQ_CONNECT_TIMEOUT_SECONDS = env_timeout("GROQ_CONNECT_TIMEOUT_SECONDS", 3)
 GROQ_READ_TIMEOUT_SECONDS = env_timeout("GROQ_READ_TIMEOUT_SECONDS", 8)
 GROQ_MAX_COMPLETION_TOKENS = env_int("GROQ_MAX_COMPLETION_TOKENS", 160, minimum=32, maximum=512)
+ISA_DIRECTOR = os.getenv('ISA_DIRECTOR', 'groq').strip().lower()
+if ISA_DIRECTOR not in ('groq', 'local'):
+    raise ImproperlyConfigured('ISA_DIRECTOR must be groq or local')
 ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'models' / 'piper-sharvard')
 
 # Límites compartidos por todos los visitantes del proceso, sin confiar en X-Forwarded-For.

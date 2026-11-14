@@ -6,13 +6,20 @@ Los consejos en español usan voseo y vocabulario argentino cotidiano, priorizan
 formas como «Usá una campera liviana», «llevá» y «elegí», sin exagerar el lunfardo.
 Esta dirección de escritura es independiente del origen de la voz de Piper. En
 inglés se reemplaza el bloque de estilo completo para no mezclar vocabulario ni
-formas verbales españolas. El texto y los segmentos de actuación se generan
-juntos: no se reemplazan palabras después de generarlos, preservando su coherencia
-con la síntesis de voz y la animación.
+formas verbales españolas. No se reemplazan palabras después de generar el consejo,
+preservando su coherencia con la síntesis de voz y la animación. Por defecto Groq
+genera también la actuación; el modo local de prueba la calcula con reglas.
 
 Frontend: [StitchWeather](https://github.com/aubarcito48/app-clima).
 
 ## Interpretación de Isa por fragmentos
+
+`ISA_DIRECTOR=groq` conserva el director actual. `ISA_DIRECTOR=local` pide a Groq
+solo el consejo y calcula los mismos segmentos en Python, sin otra consulta ni
+modelo adicional. Es una opción de prueba: requiere reiniciar el backend y obtener
+un consejo nuevo; no cambia un consejo que el navegador ya haya cargado.
+Ver [prueba comparativa y límites](docs/isa-local/PHASE-2.md) y
+[recursos para Gemini](docs/isa-local/GEMINI.md).
 
 Groq devuelve JSON con `texto` y `segmentos`: entre uno y cuatro fragmentos que,
 unidos con un espacio, deben reproducir exactamente el consejo. Cada fragmento
