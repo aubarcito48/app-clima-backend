@@ -78,7 +78,7 @@ Se restauró Sharvard después de probar Daniela argentina high. En el backend
 publicado, una narración de 254 caracteres con Daniela devolvió 503 a los 45,8
 segundos, coincidiendo con el límite del worker. No se pudo confirmar si también
 hubo presión de memoria sin los registros de Render. Se mantienen las animaciones
-de habla del frontend y Lessac para inglés; esta restauración cambia solo la voz
+de habla del frontend y, en esa etapa, Lessac para inglés; esa restauración cambió solo la voz
 española y su instalación.
 
 Se usa **Piper 1.8.0**, modelo `es_ES-sharvard-medium`, hablante femenino
@@ -103,7 +103,9 @@ de instalar. La instalación local no instala la voz en otro servidor.
 
 ### Síntesis y límites
 
-También se instala `en_US-lessac-medium`, voz femenina en inglés de Estados Unidos.
+También se instala `en_GB-cori-medium`, voz de Cori Samuel en inglés británico.
+La selección final conserva Sharvard en español y usa Cori con `length_scale` × 1,08
+para el inglés más pausado, además del ritmo del director local.
 Se carga únicamente el modelo del idioma solicitado, con la misma concurrencia de uno.
 El directorio conserva su nombre `models/piper-sharvard` y contiene ambos modelos.
 
@@ -149,7 +151,7 @@ Para el ensayo ampliado, Rhubarb tiene hasta 60 segundos independientes de los
 un `--timeout` explícito, usar al menos 130 porque ese argumento prevalece.
 
 Mantener un worker de Gunicorn: el bloqueo de síntesis es por proceso. El mismo
-Build Command instala ambos modelos; el worker carga Sharvard o Lessac según el idioma.
+Build Command instala ambos modelos; el worker carga Sharvard o Cori según el idioma.
 No requiere otra API key. Para despliegues públicos, aplicar los límites de
 solicitudes del proxy como para el resto de la API.
 
@@ -184,8 +186,9 @@ de Piper. No se registran sus contenidos, texto, audio ni credenciales.
 ### Créditos de voz
 
 - Motor [Piper / Open Home Foundation](https://github.com/OHF-Voice/piper1-gpl), GPL-3.0.
-- Modelo inglés [Lessac medium](https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/lessac/medium/MODEL_CARD),
-  corpus Catherine Byers / Lessac, con licencia de uso no comercial indicada en su ficha.
+- Modelo inglés [Cori medium](https://huggingface.co/rhasspy/piper-voices/blob/e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c/en/en_GB/cori/medium/MODEL_CARD),
+  voz de Cori Samuel, corpus HiFi-TTS de NVIDIA, CC BY 4.0 según su ficha.
+  Se conserva `MODEL_CARD.en` junto al modelo; descarga y hashes fijados en el instalador.
 - Modelo Sharvard medium de [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/raw/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/es/es_ES/sharvard/medium/MODEL_CARD);
   conservar el MODEL_CARD distribuido con los archivos.
 - Corpus Sharvard: Vincent Aubanel, Maria Luisa Garcia Lecumberri y Martin Cooke,

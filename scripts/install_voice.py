@@ -12,9 +12,9 @@ ASSETS = (
     ('es_ES-sharvard-medium.onnx', 76733615, '40febfb1679c69a4505ff311dc136e121e3419a13a290ef264fdf43ddedd0fb1'),
     ('es_ES-sharvard-medium.onnx.json', 4903, '7438c9b699c72b0c3388dae1b68d3f364dc66a2150fe554a1c11f03372957b2c'),
     ('MODEL_CARD', 392, '37655314d08fe8a0900abc628d3bcbee48ffbdd8fad9306b89525a0ada20fefc'),
-    ('en_US-lessac-medium.onnx', 63201294, '5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f'),
-    ('en_US-lessac-medium.onnx.json', 4885, 'efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0'),
-    ('MODEL_CARD.en', 351, 'ce49eb457742208166d399a40cdec2c7fa9db77960930031564ab56f12882645'),
+    ('en_GB-cori-medium.onnx', 63221984, '2e0a55e140de672aa19b182602b407607bd2e6c35fc6020c0b1516053c02e995'),
+    ('en_GB-cori-medium.onnx.json', 5471, 'f89b01c5e483c75ce9085ff89c79446c1a95a1cb4a362f629dac3b5a4b5dde75'),
+    ('MODEL_CARD.en', 1171, 'b1cdf93d1b0586941518677eb69c4ebd2db65573c57daeb7e45d3a658aae6cb8'),
 )
 BASE_URL = ('https://huggingface.co/rhasspy/piper-voices/resolve/'
             '5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/es/es_ES/sharvard/medium/')
@@ -45,7 +45,8 @@ def main():
                     raise RuntimeError('El modelo de origen no coincide con la versión verificada.')
                 shutil.copyfile(source, partial)
             else:
-                base = BASE_URL.replace('es/es_ES/sharvard/medium/', 'en/en_US/lessac/medium/') if name.startswith('en_') or name == 'MODEL_CARD.en' else BASE_URL
+                english = 'https://huggingface.co/rhasspy/piper-voices/resolve/e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c/en/en_GB/cori/medium/'
+                base = english if name.startswith('en_') or name == 'MODEL_CARD.en' else BASE_URL
                 remote_name = 'MODEL_CARD' if name == 'MODEL_CARD.en' else name
                 with urllib.request.urlopen(base + remote_name, timeout=30) as response, partial.open('wb') as output:
                     total = 0
@@ -59,7 +60,7 @@ def main():
             partial.replace(target)
         finally:
             partial.unlink(missing_ok=True)
-    print('Piper instalado: Sharvard (es) y Lessac (en). Reiniciá Django para usar las voces de Isa.')
+    print('Piper instalado: Sharvard (es) y Cori (en). Reiniciá Django para usar las voces de Isa.')
     if os.getenv('ISA_LIP_SYNC', 'off').strip().lower() == 'rhubarb':
         from install_rhubarb import install
         install()

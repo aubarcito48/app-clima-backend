@@ -20,7 +20,7 @@ MODEL_NAME = 'es_ES-sharvard-medium.onnx'
 SAMPLE_RATE = 22050
 VOICES = {
     'es': (MODEL_NAME, 1, 2),
-    'en': ('en_US-lessac-medium.onnx', 0, 1),
+    'en': ('en_GB-cori-medium.onnx', 0, 1),
 }
 
 
@@ -81,7 +81,7 @@ def main():
                 start = frames / SAMPLE_RATE
                 previous_chunk = []
                 synthesis = SynthesisConfig(speaker_id=speaker,
-                    length_scale=config.length_scale / segment['speed'])
+                    length_scale=config.length_scale * (1.08 if language == 'en' else 1) / segment['speed'])
                 for index, chunk in enumerate(chunks):
                     ids = voice.phonemes_to_ids(chunk)
                     trace_voice_memory('inference_start', index, tokens=len(ids))
