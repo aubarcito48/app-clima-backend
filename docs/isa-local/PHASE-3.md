@@ -117,6 +117,12 @@ totales orienta, pero no atribuye diferencias de memoria al cambio.
 
 ## Próximo paso visual
 
+Ya hay una [vista local aislada en el frontend](../../../app-clima/docs/isa-local/PREVIEW.md)
+que usa el WAV con `isav`, una base fija y recortes de las nuevas bocas. No se
+incorporó a la app publicada. Incluye selección manual, reloj del audio y
+ajustes por boca; G/H siguen pendientes de validar. Revisar primero esa vista
+antes de modificar el renderizador de producción.
+
 Usar el [catálogo de nueve formas para Gemini](GEMINI.md). Revisar estabilidad
 de rostro, encuadre y cabeza entre imágenes. Después conectar `isav` al reloj
 real del audio en un prototipo visual separado y comparar con el mismo WAV.
