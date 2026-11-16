@@ -21,6 +21,10 @@ un consejo nuevo; no cambia un consejo que el navegador ya haya cargado.
 Ver [prueba comparativa y límites](docs/isa-local/PHASE-2.md) y
 [recursos para Gemini](docs/isa-local/GEMINI.md).
 
+El director local tiene [reglas separadas para español e inglés](docs/isa-local/LANGUAGE-DIRECTORS.md):
+la interfaz sigue siendo la misma y el español conserva su comportamiento aprobado.
+Los ajustes ingleses se pueden calibrar independientemente en su propio módulo.
+
 La [fase 3: ensayo de Rhubarb](docs/isa-local/PHASE-3.md) se activa aparte con
 `ISA_LIP_SYNC=rhubarb`. Analiza el audio después de que sale Piper y agrega marcas
 opcionales al WAV, con fallback al audio original. Todavía no cambia la animación

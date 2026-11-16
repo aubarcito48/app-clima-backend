@@ -13,6 +13,21 @@ from .test_voice import sample_wav
 
 
 class LocalDirectionTests(SimpleTestCase):
+    def test_tuning_english_does_not_change_approved_spanish_delivery(self):
+        spanish = 'Usá abrigo. Más tarde evitá salir.'
+        expected = [
+            {'text': 'Usá abrigo.', 'gesture': 'isa-awake', 'speed': 1.0, 'energy': 1.0, 'pause_ms': 160},
+            {'text': 'Más tarde evitá salir.', 'gesture': 'isa-down', 'speed': .96, 'energy': .96, 'pause_ms': 0},
+        ]
+        self.assertEqual(direct_locally(spanish), expected)
+        with patch('api.services.isa_director_en.DEFAULT_SPEED', .9), \
+                patch('api.services.isa_director_en.DEFAULT_PAUSE_MS', 240):
+            english = direct_locally('Wear layers. Bring an umbrella.', language='en')
+            self.assertEqual(english[0]['speed'], .9)
+            self.assertEqual(english[0]['pause_ms'], 240)
+            self.assertEqual(direct_locally(spanish), expected)
+        self.assertEqual(direct_locally('Wear layers.', language='en')[0]['speed'], 1.0)
+
     def test_text_is_preserved_and_delivery_is_repeatable_in_both_languages(self):
         cases = [
             ('es', 'Usá una campera liviana con 21.5 °C. Más tarde podés sacarte una capa.'),
