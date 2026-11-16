@@ -31,3 +31,7 @@ integración sin perjudicar la continuidad facial.
 La comparación de Cori 1,08/1,20/1,30 y el reloj de pausas permanece aislada en
 el frontend. No se activa al separar los módulos. Sin push ni cambios en la
 aplicación publicada.
+
+El siguiente ensayo añade un [perfil inglés pausado optativo](ENGLISH-PACED-PROFILE.md),
+sin cambiar el perfil activo. Ese documento registra también la corrección puntual
+de lectura de grados en español e inglés.

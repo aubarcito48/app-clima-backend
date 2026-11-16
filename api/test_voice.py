@@ -170,6 +170,17 @@ class VoiceChunkTests(SimpleTestCase):
 
 
 class VoicePronunciationTests(SimpleTestCase):
+    def test_degree_sign_and_stray_period_are_spoken_as_units(self):
+        for original, spoken in [('90.°', '90 grados'), ('90°.', '90 grados.'),
+                                 ('25.°C', '25 grados'), ('25. °C', '25 grados'),
+                                 ('9.5.°C', '9.5 grados'), ('9,5.°C', '9,5 grados'),
+                                 ('−3.°', '−3 grados'), ('1.°', '1 grado')]:
+            with self.subTest(original=original):
+                self.assertEqual(speech_text(original), spoken)
+        self.assertEqual(speech_text('90.°', 'en'), '90 degrees')
+        self.assertEqual(speech_text('1.°C', 'en'), '1 degree')
+        self.assertEqual(speech_text('1.º puesto y 90°F'), '1.º puesto y 90°F')
+
     def test_english_units_are_expanded_without_changing_display_text(self):
         self.assertEqual(speech_text('19 °C and wind at 5 km/h.', 'en'),
                          '19 degrees and wind at 5 kilometers per hour.')

@@ -3,7 +3,10 @@
 import re
 
 MAX_CHUNK_PHONEMES = 64
-CELSIUS = re.compile(r'(?<![\w.,])([+−-]?\d+(?:[.,]\d+)?)\s*[°º]\s*C(?!\w)', re.IGNORECASE)
+CELSIUS = re.compile(
+    r'(?<![\w.,])([+−-]?\d+(?:[.,]\d+)?)\.?\s*(?:°(?:\s*C(?!\w))?|º\s*C(?!\w))(?!\w)',
+    re.IGNORECASE,
+)
 KILOMETERS_PER_HOUR = re.compile(r'(?<![^\W\d_])km\s*/\s*h(?!\w)', re.IGNORECASE)
 
 

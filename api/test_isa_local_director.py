@@ -6,6 +6,7 @@ import httpx
 from jsonschema import Draft202012Validator
 
 from .services.isa_local_director import direct_locally
+from .services.isa_director_en import direct_english
 from .services.isa_performance import clean_text, read_segments
 from .services.recommendations import build_messages, generate_recommendation
 from .test_recommendations import CONTRACTS, completion, weather_snapshot
@@ -13,6 +14,37 @@ from .test_voice import sample_wav
 
 
 class LocalDirectionTests(SimpleTestCase):
+    def test_degree_typo_does_not_split_temperature_from_its_unit(self):
+        text = 'Con 25. °C usá ropa fresca. Llevá agua.'
+        plan = direct_locally(text)
+        self.assertEqual([s['text'] for s in plan], ['Con 25. °C usá ropa fresca.', 'Llevá agua.'])
+        self.assertEqual(' '.join(s['text'] for s in plan), text)
+
+    def test_english_paced_trial_is_opt_in_and_keeps_text_and_spanish_unchanged(self):
+        text = 'Wear a light comfortable sweater or tee and a short-sleeve shirt; bring an umbrella.'
+        spanish = direct_locally('Usá abrigo. Más tarde evitá salir.')
+        baseline = direct_locally(text, language='en')
+        paced = direct_english(text, profile='paced-v1')
+        self.assertEqual(' '.join(s['text'] for s in paced), text)
+        self.assertEqual(read_segments(paced, text), paced)
+        self.assertEqual(paced[0]['speed'], .90)
+        self.assertEqual(paced[1]['speed'], .96)
+        self.assertEqual([s['pause_ms'] for s in paced], [90, 0])
+        self.assertEqual(direct_locally(text, language='en'), baseline)
+        self.assertEqual(direct_locally('Usá abrigo. Más tarde evitá salir.'), spanish)
+
+    def test_english_paced_profile_respects_sentence_boundaries_and_segment_limit(self):
+        text = 'Wear layers at 25.5°C. Take care with wind; bring water. Later add a jacket. Stay dry.'
+        plan = direct_english(text, profile='paced-v1')
+        self.assertEqual(' '.join(s['text'] for s in plan), text)
+        self.assertLessEqual(len(plan), 4)
+        self.assertIn('25.5°C.', plan[0]['text'])
+        self.assertEqual(plan[0]['pause_ms'], 120)
+        self.assertEqual(plan[1]['gesture'], 'isa-down')
+        self.assertEqual(plan[-1]['pause_ms'], 0)
+        with self.assertRaises(ValueError):
+            direct_english(text, profile='unknown')
+
     def test_tuning_english_does_not_change_approved_spanish_delivery(self):
         spanish = 'Usá abrigo. Más tarde evitá salir.'
         expected = [
