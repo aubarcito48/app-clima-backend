@@ -1,10 +1,11 @@
-"""Suite reproducible sin leer .env, abrir red ni conectar una base de datos."""
+"""Suite sin .env ni red; solo permite el catálogo geográfico fijo de solo lectura."""
 
 import argparse
 from contextlib import ExitStack
 import os
 from pathlib import Path
 import sys
+import sqlite3
 from unittest.mock import patch
 
 
@@ -38,11 +39,18 @@ def main():
     # Instalar los bloqueos antes de inicializar Django. Un acceso accidental
     # falla aun si el cliente de proveedor normalmente captura errores de red.
     with ExitStack() as stack:
+        from api.services.place_catalog import catalog_uri
+        original_connect = sqlite3.connect
+        def catalog_only(database, *connect_args, **kwargs):
+            if database != catalog_uri() or kwargs.get('uri') is not True:
+                raise AssertionError('Solo se admite el catálogo fijo con mode=ro&immutable=1')
+            return original_connect(database, *connect_args, **kwargs)
+        stack.enter_context(patch('sqlite3.connect', side_effect=catalog_only))
         guards = [stack.enter_context(patch(target, side_effect=AssertionError(
             "La suite aislada no permite red ni conexiones a BD"
         ))) for target in (
             "socket.create_connection", "socket.socket.connect", "socket.socket.connect_ex",
-            "sqlite3.connect", "django.db.backends.base.base.BaseDatabaseWrapper.ensure_connection",
+            "django.db.backends.base.base.BaseDatabaseWrapper.ensure_connection",
         )]
         import django
         from django.core.management import call_command

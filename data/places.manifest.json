@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "snapshot_date": "2026-11-16",
+  "cities": 171939,
+  "names": 916152,
+  "catalog_sha256": "867c662e7ab803cdde85c4152f40dde3e88ef908349a92b53aee24a5d677bc3e",
+  "sources": [
+    {
+      "url": "https://download.geonames.org/export/dump/cities1000.zip",
+      "sha256": "46a35f52226f34dd56b64d57b4e9bb380a8ad06605354f8095ea9cdc561aba2c"
+    },
+    {
+      "url": "https://download.geonames.org/export/dump/admin1CodesASCII.txt",
+      "sha256": "2e4867f5397acb056ea26377601b57af37cb4c81399770225018e9e439e91ad3"
+    }
+  ],
+  "license": "CC BY 4.0",
+  "attribution": "GeoNames · https://www.geonames.org/",
+  "transformations": "Selected fields, normalized and deduplicated search aliases, indexed read-only catalog."
+}

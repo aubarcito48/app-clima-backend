@@ -1,69 +1,86 @@
+import hashlib
 import json
 from pathlib import Path
+import sqlite3
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlsplit
 
 from django.test import SimpleTestCase, override_settings
 from jsonschema import Draft202012Validator
-from .services.places import search_places, MAX_BYTES
-from .services.geocoding import GeocodingFailure
 
-ROW={'id':3860259,'name':'Córdoba','country_code':'AR','admin1':'Córdoba','latitude':-31.42,'longitude':-64.18}
+from .services.places import search_places
+from .services.place_catalog import CATALOG_PATH, catalog_uri, normalize_name
 
-@override_settings(ALLOWED_HOSTS=['testserver'],CORS_ALLOWED_ORIGINS=['http://localhost:4200'])
+
+@override_settings(ALLOWED_HOSTS=['testserver'], CORS_ALLOWED_ORIGINS=['http://localhost:4200'])
 class PlaceSuggestionsTests(SimpleTestCase):
     def setUp(self):
-        for target in ('socket.create_connection','socket.socket.connect','sqlite3.connect'):
-            block=patch(target,side_effect=AssertionError('Sin red ni BD')); block.start(); self.addCleanup(block.stop)
-        factory=patch('api.services.places.http.client.HTTPSConnection'); self.factory=factory.start(); self.addCleanup(factory.stop)
-        self.connection=self.factory.return_value
-        self.response=self.connection.getresponse.return_value
-        self.response.status=200
-        self.response.read.return_value=json.dumps({'results':[ROW]}).encode()
+        for target in ('socket.create_connection', 'socket.socket.connect'):
+            block = patch(target, side_effect=AssertionError('Las sugerencias no pueden abrir red'))
+            block.start()
+            self.addCleanup(block.stop)
 
-    def test_endpoint_uses_prefix_geocoding_without_weather_or_ai(self):
+    def test_endpoint_uses_local_catalog_without_weather_or_ai(self):
         with patch('api.services.climate.fetch_weather') as weather, patch('api.services.climate.generate_recommendation') as advice:
-            response=self.client.get('/api/v1/lugares/',{'q':'  Co\u0301r  '},HTTP_ORIGIN='http://localhost:4200')
-        self.assertEqual(response.status_code,200)
-        schema=json.loads((Path(__file__).with_name('contracts')/'places-v1.schema.json').read_text(encoding='utf-8'))
+            response = self.client.get('/api/v1/lugares/', {'q': '  Co\u0301r  '}, HTTP_ORIGIN='http://localhost:4200')
+        self.assertEqual(response.status_code, 200)
+        schema = json.loads((Path(__file__).with_name('contracts') / 'places-v1.schema.json').read_text(encoding='utf-8'))
         Draft202012Validator(schema).validate(response.json())
-        self.assertEqual(response.json()['sugerencias'][0]['nombre'],'Córdoba')
-        self.assertEqual(response['Cache-Control'],'no-store')
-        self.assertEqual(response['Access-Control-Allow-Origin'],'http://localhost:4200')
-        self.factory.assert_called_once_with('geocoding-api.open-meteo.com',timeout=3)
-        target=urlsplit(self.connection.request.call_args.args[1])
-        self.assertEqual(target.path,'/v1/search')
-        self.assertEqual(parse_qs(target.query),{'name':['Cór'],'count':['5'],'language':['es'],'format':['json']})
-        self.connection.close.assert_called_once(); weather.assert_not_called(); advice.assert_not_called()
+        self.assertEqual(response.json()['sugerencias'][0]['nombre'], 'Córdoba')
+        self.assertEqual(response['Cache-Control'], 'no-store')
+        self.assertEqual(response['Access-Control-Allow-Origin'], 'http://localhost:4200')
+        weather.assert_not_called()
+        advice.assert_not_called()
 
-    def test_invalid_or_duplicated_input_never_calls_the_provider(self):
-        for params in ({},{'q':'co'},{'q':'x'*207},{'q':'co\x00r'},{'q':'cord','url':'https://example.invalid'}):
-            self.assertEqual(self.client.get('/api/v1/lugares/',params).status_code,400)
-        self.assertEqual(self.client.get('/api/v1/lugares/?q=cor&q=men').status_code,400)
-        self.assertEqual(self.client.post('/api/v1/lugares/',{'q':'cor'}).status_code,405)
-        self.factory.assert_not_called()
+    def test_invalid_or_duplicated_input_never_opens_catalog(self):
+        with patch('api.services.places.sqlite3.connect') as connect:
+            for params in ({}, {'q': 'co'}, {'q': 'x' * 207}, {'q': 'co\x00r'}, {'q': 'cord', 'url': 'https://example.invalid'}):
+                self.assertEqual(self.client.get('/api/v1/lugares/', params).status_code, 400)
+            self.assertEqual(self.client.get('/api/v1/lugares/?q=cor&q=men').status_code, 400)
+            self.assertEqual(self.client.post('/api/v1/lugares/', {'q': 'cor'}).status_code, 405)
+            connect.assert_not_called()
 
-    def test_optional_country_filter_and_missing_results(self):
-        self.response.read.return_value=b'{}'
-        self.assertEqual(search_places('Córdoba, Córdoba, ar'),[])
-        target=urlsplit(self.connection.request.call_args.args[1])
-        params=parse_qs(target.query)
-        self.assertEqual(params['name'],['Córdoba, Córdoba'])
-        self.assertEqual(params['countryCode'],['AR'])
+    def test_country_region_and_missing_results(self):
+        argentina = search_places('Cordoba, Cordoba, ar')
+        spain = search_places('Córdoba, Andalusia, ES')
+        self.assertEqual((argentina[0]['nombre'], argentina[0]['pais']), ('Córdoba', 'AR'))
+        self.assertEqual((spain[0]['nombre'], spain[0]['pais']), ('Córdoba', 'ES'))
+        self.assertNotEqual(argentina[0]['id'], spain[0]['id'])
+        self.assertTrue(all(row['pais'] == 'AR' for row in argentina))
+        self.assertEqual(search_places('Cordoba, Ontario, CA'), [])
+        self.assertEqual(search_places('zzzzzznotacity'), [])
 
-    def test_rate_limit_and_provider_failures_are_safe(self):
-        for status in (429,301,401,500):
-            self.response.status=status
-            self.response.read.return_value=b'PRIVATE-KEY body'
-            response=self.client.get('/api/v1/lugares/',{'q':'cord'})
-            self.assertEqual(response.status_code,429 if status==429 else 503)
-            self.assertNotIn('PRIVATE',response.content.decode())
-        self.connection.request.side_effect=TimeoutError('PRIVATE')
-        self.assertEqual(self.client.get('/api/v1/lugares/',{'q':'cord'}).status_code,503)
+    def test_accents_composed_unicode_aliases_and_international_names(self):
+        self.assertEqual(search_places('Córdoba, AR'), search_places('Co\u0301rdoba, AR'))
+        self.assertEqual(search_places('Cordoba, AR'), search_places('CÓRDOBA, AR'))
+        self.assertEqual(search_places('Sao Paulo, BR')[0]['nombre'], 'São Paulo')
+        self.assertEqual(search_places('Londres')[0]['nombre'], 'London')
+        self.assertEqual(search_places('Tokyo')[0]['pais'], 'JP')
+        # A local catalog must support Unicode input, not just ASCII names.
+        self.assertTrue(search_places('北京市'))
 
-    def test_invalid_payloads_are_rejected_and_ids_deduplicated(self):
-        for body in (b'not json',b'{"results":NaN}',b'x'*(MAX_BYTES+1),json.dumps({'results':[{}]}).encode(),json.dumps({'results':[{**ROW,'latitude':999}]}).encode(),json.dumps({'results':[ROW]*6}).encode()):
-            self.response.read.return_value=body
-            with self.assertRaises(GeocodingFailure): search_places('cord')
-        self.response.read.return_value=json.dumps({'results':[ROW,ROW]}).encode()
-        self.assertEqual(len(search_places('cord')),1)
+    def test_real_city_names_rank_before_unrelated_aliases_and_results_are_unique(self):
+        rows = search_places('San')
+        self.assertEqual(rows[0]['nombre'], 'San')
+        self.assertTrue(all(normalize_name(row['nombre']).startswith('san') for row in rows))
+        self.assertLessEqual(len(rows), 5)
+        self.assertEqual(len({row['id'] for row in rows}), len(rows))
+        self.assertEqual(rows, search_places('San'))
+        self.assertEqual(search_places('Villa Allende, AR')[0]['nombre'], 'Villa Allende')
+
+    def test_catalog_is_read_only_and_matches_its_manifest(self):
+        with sqlite3.connect(catalog_uri(), uri=True) as connection:
+            with self.assertRaises(sqlite3.OperationalError):
+                connection.execute('DELETE FROM cities')
+        manifest = json.loads(CATALOG_PATH.with_suffix('.manifest.json').read_text(encoding='utf-8'))
+        self.assertEqual(hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest(), manifest['catalog_sha256'])
+        self.assertGreater(manifest['cities'], 170000)
+
+    def test_catalog_failure_is_safe(self):
+        with patch('api.services.places.sqlite3.connect', side_effect=sqlite3.DatabaseError('PRIVATE path')):
+            response = self.client.get('/api/v1/lugares/', {'q': 'cord'})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn('PRIVATE', response.content.decode())
+
+    def test_query_text_cannot_modify_catalog(self):
+        self.assertEqual(search_places("'; DROP TABLE cities; --"), [])
+        self.assertEqual(search_places('Cordoba, AR')[0]['nombre'], 'Córdoba')

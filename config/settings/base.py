@@ -30,7 +30,8 @@ ASGI_APPLICATION = "config.asgi.application"
 TEMPLATES = []
 
 # Django usa su backend dummy si no hay conexiones configuradas.
-# No hay SQLite, ORM de la aplicación, sesiones ni migraciones que ejecutar.
+# No hay ORM de usuarios, sesiones ni migraciones. El catálogo geográfico SQLite
+# se consulta aparte como archivo estático de solo lectura, sin conexión Django.
 DATABASES = {}
 
 LANGUAGE_CODE = "es-ar"

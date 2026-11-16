@@ -1,6 +1,19 @@
 ﻿# App Clima Backend
 
-API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones, consulta el clima y pronóstico de OpenWeather, y genera recomendaciones con Groq en español o inglés. No utiliza base de datos.
+API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones, consulta el clima y pronóstico de OpenWeather, y genera recomendaciones con Groq en español o inglés. No guarda datos de usuarios. Las sugerencias usan un catálogo geográfico local de solo lectura, sin API externa.
+
+## Buscador local de ciudades
+
+`GET /api/v1/lugares/?q=Cordoba,AR` consulta nuestro índice de nombres y alias,
+sin conexión a Open-Meteo ni a GeoNames. Conserva el contrato público y limita
+la respuesta a cinco localidades. Reconoce acentos, alias y filtros de región
+y país ISO de dos letras. Los nombres exactos se ordenan primero y la población
+desempata; se excluyen alias ambiguos de tres letras mayúsculas.
+
+El [catálogo y su procedencia](data/README.md) se incluyen en el repositorio.
+No hay descargas durante el arranque o las consultas. No requiere un servicio
+de base de datos ni un disco persistente de Render: SQLite se utiliza únicamente
+como formato de índice estático, abierto con `mode=ro&immutable=1`.
 
 Los consejos en español usan voseo y vocabulario argentino cotidiano, priorizando
 formas como «Usá una campera liviana», «llevá» y «elegí», sin exagerar el lunfardo.
@@ -211,7 +224,7 @@ de Piper. No se registran sus contenidos, texto, audio ni credenciales.
 .venv\Scripts\python.exe scripts/test_backend.py
 ```
 
-Las pruebas usan proveedores simulados, sin claves reales, red ni base de datos. El contrato JSON está en [api/contracts](api/contracts/).
+Las pruebas usan proveedores simulados, sin claves reales ni red. Solo se permite abrir el catálogo geográfico fijo en modo de solo lectura; no se permiten bases de datos de usuarios. El contrato JSON está en [api/contracts](api/contracts/).
 
 ## Seguridad y presupuestos de solicitudes
 
