@@ -152,6 +152,33 @@ class OfficialAlertsTests(SimpleTestCase):
         self.assertEqual(self.client.post('/api/v1/alertas/').status_code, 405)
         self.download.assert_not_called()
 
+    def test_partial_retry_reuses_documents_already_verified(self):
+        self.documents[alerts.FEED] = feed('notice', 'slow')
+        attempts = []
+        def download(client, url):
+            attempts.append(url)
+            if url == PREFIX+'slow.xml' and attempts.count(url) == 1:
+                raise httpx.ReadTimeout('private details must not be exposed')
+            return cap('second') if url == PREFIX+'slow.xml' else self.documents[url]
+        self.download.side_effect = download
+        first = self.query().json()
+        self.assertEqual(first['estado'], 'parcial')
+        self.assertEqual(first['fuente']['verificacion']['fallos'], {'documento_timeout': 1})
+        self.clock.return_value = NOW + timedelta(seconds=31)
+        second = self.query().json()
+        self.assertEqual(second['estado'], 'disponible')
+        self.assertEqual(len(second['alertas']), 2)
+        self.assertEqual(attempts.count(PREFIX+'notice.xml'), 1)
+        self.assertEqual(attempts.count(PREFIX+'slow.xml'), 2)
+
+    def test_source_http_failure_has_a_safe_diagnostic(self):
+        response = httpx.Response(403, request=httpx.Request('GET', alerts.FEED))
+        self.download.side_effect = httpx.HTTPStatusError('private marker', request=response.request, response=response)
+        body = self.query().json()
+        self.assertEqual(body['estado'], 'no_disponible')
+        self.assertEqual(body['fuente']['verificacion']['fallos'], {'indice_http_403': 1})
+        self.assertNotIn('private marker', str(body))
+
     def test_download_does_not_follow_redirects_and_enforces_size_limit(self):
         # The low-level transport is exercised with an in-memory httpx response.
         client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(302, headers={'location': 'https://bad.invalid'})), follow_redirects=False)

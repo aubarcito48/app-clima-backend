@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone as dt_timezone
 from email.utils import parsedate_to_datetime
 import math
+import hashlib
 import re
 import threading
 from urllib.parse import urlsplit
@@ -17,9 +18,19 @@ FEED = "https://ssl.smn.gob.ar/CAP/AR.php"
 SOURCE = "https://www.smn.gob.ar/alertas"
 NS = {"c": "urn:oasis:names:tc:emergency:cap:1.2"}
 MAX_BYTES = 1024 * 1024
-CACHE_KEY = "smn-cap-catalog-v2"
+CACHE_KEY = "smn-cap-catalog-v3"
 MAX_DOCUMENTS = 256
 _catalog_lock = threading.Lock()
+
+
+def _failure_reason(error, stage):
+    if isinstance(error, httpx.HTTPStatusError):
+        return f'{stage}_http_{error.response.status_code}'
+    if isinstance(error, httpx.TimeoutException):
+        return stage + '_timeout'
+    if isinstance(error, httpx.HTTPError):
+        return stage + '_red'
+    return stage + '_formato'
 
 
 def _utc(value):
@@ -161,7 +172,8 @@ def _download(client, url):
 
 
 def _load_catalog(now):
-    with httpx.Client(timeout=httpx.Timeout(3, connect=2), follow_redirects=False, trust_env=False) as client:
+    with httpx.Client(timeout=httpx.Timeout(5, connect=3), follow_redirects=False, trust_env=False,
+                      headers={'User-Agent': 'StitchWeather/1.0 (+https://app-clima-ecru.vercel.app/)'}) as client:
         root = _xml(_download(client, FEED))
         channel = root.find('channel')
         if root.tag != 'rss' or channel is None:
@@ -182,21 +194,35 @@ def _load_catalog(now):
         partial = partial or len(urls) > MAX_DOCUMENTS
         urls = urls[:MAX_DOCUMENTS]
         def document(url):
-            return _parse_cap(_download(client, url), url)
+            key = 'smn-cap-document-v1-' + hashlib.sha256(url.encode()).hexdigest()
+            cached = cache.get(key)
+            if cached is not None:
+                return cached['record']
+            result = _parse_cap(_download(client, url), url)
+            # Keep successful downloads while retrying the missing documents.
+            cache.set(key, {'record': result}, 180)
+            return result
         with ThreadPoolExecutor(max_workers=8) as pool:
             tasks = [pool.submit(document, url) for url in urls]
-            done, pending = wait(tasks, timeout=10)
+            done, pending = wait(tasks, timeout=16)
             for task in pending:
                 task.cancel()
-        records = []
-        for task in done:
+        # Include requests that finished while the executor was shutting down.
+        completed = [task for task in tasks if task.done() and not task.cancelled()]
+        records, failures = [], {}
+        for task in completed:
             try:
                 record = task.result()
                 if record is not None:
                     records.append(record)
-            except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError):
+            except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError) as error:
                 partial = True
-        return {"records": records, "partial": partial or bool(pending), "published": _iso(published), "checked": _iso(now)}
+                reason = _failure_reason(error, 'documento')
+                failures[reason] = failures.get(reason, 0) + 1
+        remaining = sum(task.cancelled() for task in tasks)
+        return {"records": records, "partial": partial or bool(remaining), "published": _iso(published), "checked": _iso(now),
+                "verification": {'esperados': len(urls), 'verificados': len(completed)-sum(failures.values()),
+                                 'pendientes': remaining, 'fallos': failures}}
 
 
 def _catalog(now):
@@ -238,6 +264,7 @@ def query_alerts(latitude, longitude, country):
         if now - _utc(catalog['published']) > timedelta(hours=24):
             return base
         base['fuente'].update(consultado_en_utc=catalog['checked'], publicado_en_utc=catalog['published'])
+        base['fuente']['verificacion'] = catalog.get('verification', {})
         suppressed = {ref for record in catalog['records'] for ref in record['references']}
         notices, seen = [], set()
         for record in sorted(catalog['records'], key=lambda row: row['sent'], reverse=True):
@@ -251,6 +278,6 @@ def query_alerts(latitude, longitude, country):
                     notices.append({key: value for key, value in notice.items() if key != 'shapes'})
         rank = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3, "Unknown": 4}
         base.update(estado="parcial" if catalog['partial'] else "disponible", alertas=sorted(notices, key=lambda row: (rank[row['severidad']], row['inicio_utc'])))
-    except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError):
-        pass
+    except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError) as error:
+        base['fuente']['verificacion'] = {'fallos': {_failure_reason(error, 'indice'): 1}}
     return base
