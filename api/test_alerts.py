@@ -216,3 +216,42 @@ class OfficialAlertsTests(SimpleTestCase):
                 with self.assertRaises(alerts.SMNRateLimited):
                     DOWNLOAD(client, alerts.FEED)
                 remember.assert_called_once_with(alerts.BACKOFF_KEY, True, 90)
+
+    def test_background_recovery_completes_missing_documents_without_a_new_visitor(self):
+        complete = alerts._load_catalog(NOW)
+        from copy import deepcopy
+        incomplete = deepcopy(complete)
+        incomplete['partial'] = True
+        incomplete['verification']['pendientes'] = 1
+        cache.set(alerts.CACHE_KEY, incomplete, 900)
+        alerts._recovery_lock.acquire()
+        with patch.object(alerts, '_load_catalog', return_value=complete) as load, patch.object(alerts.time, 'sleep'):
+            alerts._recover_catalog()
+        load.assert_called_once()
+        self.assertFalse(alerts._recovery_lock.locked())
+        self.assertEqual(self.query().json()['estado'], 'disponible')
+
+    def test_background_recovery_waits_for_the_provider_and_stops_at_its_budget(self):
+        incomplete = {'partial': True, 'verification': {'pendientes': 1}}
+        cache.set(alerts.CACHE_KEY, incomplete, 900)
+        cache.set(alerts.BACKOFF_KEY, True, 90)
+        alerts._recovery_lock.acquire()
+        with patch.object(alerts.time, 'monotonic', side_effect=[0, 1, 241]), patch.object(
+                alerts.time, 'sleep') as sleep, patch.object(alerts, '_load_catalog') as load:
+            alerts._recover_catalog()
+        load.assert_not_called()
+        sleep.assert_called_once_with(5)
+        self.assertFalse(alerts._recovery_lock.locked())
+
+    @override_settings(SMN_BACKGROUND_RECOVERY=True)
+    def test_concurrent_visitors_schedule_only_one_recovery_worker(self):
+        incomplete = {'partial': True, 'verification': {'pendientes': 1}}
+        try:
+            with patch.object(alerts.threading, 'Thread') as worker:
+                alerts._schedule_recovery(incomplete)
+                alerts._schedule_recovery(incomplete)
+                worker.assert_called_once_with(target=alerts._recover_catalog, name='smn-recovery', daemon=True)
+                worker.return_value.start.assert_called_once()
+        finally:
+            if alerts._recovery_lock.locked():
+                alerts._recovery_lock.release()

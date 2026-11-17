@@ -32,9 +32,15 @@ El catálogo SMN admite hasta 256 documentos únicos e incluye la ruta oficial
 si un documento falla, se supera el límite o no termina a tiempo. Las consultas
 comparten catálogo por tres minutos (30 segundos si fue parcial), sin duplicar
 descargas concurrentes dentro del proceso. Los documentos válidos se conservan
-15 minutos para reintentar solo los faltantes. Las descargas van espaciadas y un
+una hora para reintentar solo los faltantes. Las descargas van espaciadas y un
 HTTP 429 detiene nuevas solicitudes durante el backoff. La tarjeta diferencia
-este límite del SMN de otros fallos. Los textos oficiales conservan español.
+este límite del SMN de otros fallos. En producción, una única recuperación en
+segundo plano intenta completar los documentos faltantes con un presupuesto
+de cuatro minutos por ejecución, sin saltarse el backoff. No requiere otra visita
+ni un servicio contratado. La caché del catálogo completo sigue siendo de tres
+minutos; cada consulta revalida las vigencias y el catálogo renovado incorpora
+las actualizaciones y cancelaciones.
+Los textos oficiales conservan español.
 
 ## Buscador local de ciudades
 

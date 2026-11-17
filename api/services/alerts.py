@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 
 from django.core.cache import cache
+from django.conf import settings
 from django.utils import timezone
 import httpx
 
@@ -22,6 +23,7 @@ MAX_BYTES = 1024 * 1024
 CACHE_KEY = "smn-cap-catalog-v3"
 MAX_DOCUMENTS = 256
 _catalog_lock = threading.Lock()
+_recovery_lock = threading.Lock()
 _download_lock = threading.Lock()
 _last_download = 0
 BACKOFF_KEY = 'smn-provider-backoff-v1'
@@ -236,7 +238,7 @@ def _load_catalog(now):
                 return cached['record']
             result = _parse_cap(_download(client, url), url)
             # Keep successful downloads while retrying the missing documents.
-            cache.set(key, {'record': result}, 900)
+            cache.set(key, {'record': result}, 3600)
             return result
         with ThreadPoolExecutor(max_workers=2) as pool:
             tasks = [pool.submit(document, url) for url in urls]
@@ -261,6 +263,52 @@ def _load_catalog(now):
                                  'pendientes': remaining, 'fallos': failures}}
 
 
+def _recoverable(catalog):
+    verification = catalog.get('verification', {})
+    failures = verification.get('fallos', {})
+    return catalog['partial'] and (verification.get('pendientes', 0) > 0 or any(
+        code.endswith(('_timeout', '_red', '_http_429')) for code in failures))
+
+
+def _recover_catalog():
+    """One bounded recovery run per process; never bypass an SMN backoff."""
+    deadline = time.monotonic() + 240
+    try:
+        while time.monotonic() < deadline:
+            previous = cache.get(CACHE_KEY)
+            if previous is None or not _recoverable(previous):
+                return
+            if cache.get(BACKOFF_KEY):
+                time.sleep(5)
+                continue
+            if not _catalog_lock.acquire(blocking=False):
+                time.sleep(1)
+                continue
+            try:
+                result = _load_catalog(timezone.now())
+                cache.set(CACHE_KEY, result, 900)
+            except SMNRateLimited:
+                pass
+            except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError):
+                return
+            finally:
+                _catalog_lock.release()
+            time.sleep(2)
+    finally:
+        _recovery_lock.release()
+
+
+def _schedule_recovery(catalog):
+    if not settings.SMN_BACKGROUND_RECOVERY or not _recoverable(catalog):
+        return
+    if not _recovery_lock.acquire(blocking=False):
+        return
+    try:
+        threading.Thread(target=_recover_catalog, name='smn-recovery', daemon=True).start()
+    except RuntimeError:
+        _recovery_lock.release()
+
+
 def _catalog(now):
     def fresh():
         value = cache.get(CACHE_KEY)
@@ -270,7 +318,12 @@ def _catalog(now):
         return None
     cached = fresh()
     if cached is not None:
+        _schedule_recovery(cached)
         return cached
+    if _recovery_lock.locked():
+        previous = cache.get(CACHE_KEY)
+        if previous is not None:
+            return previous
     if cache.get(BACKOFF_KEY):
         # Preserve already verified notices during the wait, without claiming completeness.
         previous = cache.get(CACHE_KEY)
@@ -278,6 +331,7 @@ def _catalog(now):
             previous['partial'] = True
             previous['verification']['fallos']['documento_http_429'] = max(
                 1, previous['verification']['fallos'].get('documento_http_429', 0))
+            _schedule_recovery(previous)
             return previous
         raise SMNRateLimited()
     # Share catalog across cities without a burst of duplicate feed downloads.
@@ -289,6 +343,7 @@ def _catalog(now):
             return cached
         result = _load_catalog(now)
         cache.set(CACHE_KEY, result, 900)
+        _schedule_recovery(result)
         return result
     finally:
         _catalog_lock.release()

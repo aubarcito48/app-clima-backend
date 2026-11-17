@@ -81,6 +81,7 @@ ISA_RHUBARB_PATH = Path(os.getenv('ISA_RHUBARB_PATH', '').strip() or (
 
 # Límites compartidos por todos los visitantes del proceso, sin confiar en X-Forwarded-For.
 API_RATE_LIMIT_ENABLED = False
+SMN_BACKGROUND_RECOVERY = False
 API_REQUESTS_PER_MINUTE = {
     '/api/v1/mapa/': env_int('API_MAP_REQUESTS_PER_MINUTE', 40, minimum=1, maximum=60),
     '/api/v1/clima/': env_int('API_CLIMATE_REQUESTS_PER_MINUTE', 30, minimum=1, maximum=300),

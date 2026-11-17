@@ -10,6 +10,7 @@ if env_bool("DJANGO_DEBUG", default=False):
 
 DEBUG = False
 API_RATE_LIMIT_ENABLED = True
+SMN_BACKGROUND_RECOVERY = True
 GROQ_GUARD_ENABLED = True
 
 if not ALLOWED_HOSTS or not all(exact_host(host) for host in ALLOWED_HOSTS):  # noqa: F405
