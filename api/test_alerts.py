@@ -145,7 +145,7 @@ class OfficialAlertsTests(SimpleTestCase):
         self.assertEqual(self.query().json()['alertas'], [])
 
     def test_outside_coverage_and_invalid_input_do_not_contact_smn(self):
-        self.assertEqual(self.query(pais='UY').json()['estado'], 'fuera_cobertura')
+        self.assertEqual(self.query(pais='PE').json()['estado'], 'fuera_cobertura')
         for values in ({'latitud': 91}, {'longitud': 'nan'}, {'pais': 'ARG'}, {'latitud': ''}, {'url': 'https://bad.invalid'}):
             self.assertEqual(self.query(**values).status_code, 400)
         self.assertEqual(self.client.get('/api/v1/alertas/?latitud=1&latitud=2&longitud=3&pais=AR').status_code, 400)

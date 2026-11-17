@@ -25,7 +25,29 @@ Mantiene hasta 32 imágenes por proceso durante cinco minutos y corta ráfagas
 cuando el proveedor falla. Límites iniciales: 40 solicitudes/minuto por proceso
 y 24 por visitante. No requiere disco, variables nuevas ni llamadas a Groq.
 El mapa base utiliza OpenStreetMap con atribución visible; no se carga antes de
-seleccionar una ciudad. Se puede cerrar manualmente.
+seleccionar una ciudad.
+
+`GET /api/v1/alertas/` selecciona la fuente según `pais`: Argentina (SMN),
+Brasil (INMET), Chile (DMC) y Uruguay (INUMET). Los demás países devuelven
+`fuera_cobertura`, nunca una confirmación de ausencia de alertas. Las fuentes
+adicionales usan sus RSS/CAP oficiales, con enlaces HTTPS fijos y permitidos:
+
+- [DMC Chile](https://archivos.meteochile.gob.cl/portaldmc/rss/rss.php).
+- [INUMET Uruguay](https://www.inumet.gub.uy/reportes/riesgo/rss.xml).
+- [INMET Brasil](https://apiprevmet3.inmet.gov.br/avisos/rss).
+
+Cada catálogo se comparte entre ciudades durante tres minutos (un minuto si
+es parcial), con caché y bloqueo independientes por país. Se permiten hasta
+128 documentos únicos por fuente, tres descargas concurrentes y 16 segundos
+de espera de tareas más el timeout de las que ya estaban ejecutándose.
+Un HTTP 429 respeta `Retry-After` y detiene nuevas descargas del país afectado;
+los demás fallos tienen una pausa de un minuto. Las vigencias, actualizaciones,
+cancelaciones y polígonos se comprueban para cada ubicación. Solo una consulta
+completa y con fecha de publicación verificada puede devolver `disponible`.
+Las fallas parciales conservan avisos comprobados, sin afirmar que son todos.
+Los textos conservan su idioma original (español o portugués).
+Sin claves nuevas, consultas a Groq ni servicios pagos. Toda caché es por proceso
+y se pierde al reiniciar Render Free. Disponibilidad sujeta a cada fuente oficial.
 
 El catálogo SMN admite hasta 256 documentos únicos e incluye la ruta oficial
 `avisocortoplazo`, además de las alertas generales. Se conserva el estado parcial

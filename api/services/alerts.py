@@ -120,7 +120,7 @@ def _text(node, name, *, required=False, limit=20000):
     return value
 
 
-def _parse_cap(body, url):
+def _parse_cap(body, url, language='es'):
     root = _xml(body)
     if root.tag != "{" + NS['c'] + "}alert":
         raise ValueError("Unexpected CAP document")
@@ -141,8 +141,8 @@ def _parse_cap(body, url):
     if result['cancel']:
         return result
     infos = root.findall("c:info", NS)
-    spanish = [info for info in infos if _text(info, 'language').lower().startswith('es')]
-    for info in spanish or infos[:1]:
+    preferred = [info for info in infos if _text(info, 'language').lower().startswith(language)]
+    for info in preferred or infos[:1]:
         start = _utc(_text(info, "onset") or _text(info, "effective") or _iso(sent))
         end = _utc(_text(info, "expires", required=True))
         if end <= start:
@@ -350,6 +350,9 @@ def _catalog(now):
 
 
 def query_alerts(latitude, longitude, country):
+    if country in {'BR', 'CL', 'UY'}:
+        from .international_alerts import query_international_alerts
+        return query_international_alerts(latitude, longitude, country)
     now = timezone.now()
     base = {
         "ubicacion": {"latitud": latitude, "longitud": longitude, "pais": country},
@@ -365,19 +368,25 @@ def query_alerts(latitude, longitude, country):
             return base
         base['fuente'].update(consultado_en_utc=catalog['checked'], publicado_en_utc=catalog['published'])
         base['fuente']['verificacion'] = catalog.get('verification', {})
-        suppressed = {ref for record in catalog['records'] for ref in record['references']}
-        notices, seen = [], set()
-        for record in sorted(catalog['records'], key=lambda row: row['sent'], reverse=True):
-            if record['cancel'] or record['id'] in suppressed or record['id'] in seen:
-                continue
-            seen.add(record['id'])
-            for notice in record['notices']:
-                if _utc(notice['fin_utc']) <= now or _utc(notice['emitido_en_utc']) > now + timedelta(minutes=15):
-                    continue
-                if any(_inside(latitude, longitude, shape) for shape in notice['shapes']):
-                    notices.append({key: value for key, value in notice.items() if key != 'shapes'})
-        rank = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3, "Unknown": 4}
-        base.update(estado="parcial" if catalog['partial'] else "disponible", alertas=sorted(notices, key=lambda row: (rank[row['severidad']], row['inicio_utc'])))
+        base.update(estado="parcial" if catalog['partial'] else "disponible",
+                    alertas=_select_notices(catalog['records'], latitude, longitude, now))
     except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError) as error:
         base['fuente']['verificacion'] = {'fallos': {_failure_reason(error, 'indice'): 1}}
     return base
+
+
+def _select_notices(records, latitude, longitude, now):
+    """Apply CAP updates/cancellations, validity and geometry for every provider."""
+    suppressed = {ref for record in records for ref in record['references']}
+    notices, seen = [], set()
+    for record in sorted(records, key=lambda row: row['sent'], reverse=True):
+        if record['cancel'] or record['id'] in suppressed or record['id'] in seen:
+            continue
+        seen.add(record['id'])
+        for notice in record['notices']:
+            if _utc(notice['fin_utc']) <= now or _utc(notice['emitido_en_utc']) > now + timedelta(minutes=15):
+                continue
+            if any(_inside(latitude, longitude, shape) for shape in notice['shapes']):
+                notices.append({key: value for key, value in notice.items() if key != 'shapes'})
+    rank = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3, "Unknown": 4}
+    return sorted(notices, key=lambda row: (rank[row['severidad']], row['inicio_utc']))
