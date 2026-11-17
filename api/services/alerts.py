@@ -378,7 +378,7 @@ def query_alerts(latitude, longitude, country):
 def _select_notices(records, latitude, longitude, now):
     """Apply CAP updates/cancellations, validity and geometry for every provider."""
     suppressed = {ref for record in records for ref in record['references']}
-    notices, seen = [], set()
+    notices, seen, content_seen = [], set(), set()
     for record in sorted(records, key=lambda row: row['sent'], reverse=True):
         if record['cancel'] or record['id'] in suppressed or record['id'] in seen:
             continue
@@ -387,6 +387,15 @@ def _select_notices(records, latitude, longitude, now):
             if _utc(notice['fin_utc']) <= now or _utc(notice['emitido_en_utc']) > now + timedelta(minutes=15):
                 continue
             if any(_inside(latitude, longitude, shape) for shape in notice['shapes']):
+                # Different regional CAP documents can describe the same notice at
+                # this point. Keep the newest official document, but never merge
+                # different periods, severity, instructions or named areas.
+                content = tuple(notice[key] for key in (
+                    'fenomeno', 'severidad', 'urgencia', 'certeza', 'inicio_utc',
+                    'fin_utc', 'descripcion', 'recomendaciones', 'zona'))
+                if content in content_seen:
+                    continue
+                content_seen.add(content)
                 notices.append({key: value for key, value in notice.items() if key != 'shapes'})
     rank = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3, "Unknown": 4}
     return sorted(notices, key=lambda row: (rank[row['severidad']], row['inicio_utc']))

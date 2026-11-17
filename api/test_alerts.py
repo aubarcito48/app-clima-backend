@@ -87,7 +87,7 @@ class OfficialAlertsTests(SimpleTestCase):
     def test_more_than_thirty_two_documents_are_checked_and_cached(self):
         names = [f'notice{i}' for i in range(40)]
         self.documents = {alerts.FEED: feed(*names), **{
-            PREFIX + name + '.xml': cap(identifier=name) for name in names}}
+            PREFIX + name + '.xml': cap(identifier=name).replace(b'<description>', f'<description>{name}: '.encode()) for name in names}}
         self.assertEqual(self.query().json()['estado'], 'disponible')
         self.assertEqual(len(self.query().json()['alertas']), 40)
         self.assertEqual(self.download.call_count, 41)
@@ -125,6 +125,34 @@ class OfficialAlertsTests(SimpleTestCase):
         self.assertEqual(body['estado'], 'no_disponible'); self.assertEqual(body['alertas'], [])
         self.assertNotIn('private', str(body))
 
+    def test_overlapping_regional_documents_show_one_identical_notice_on_repeated_search(self):
+        self.documents = {
+            alerts.FEED: feed('plain', 'patagonia'),
+            PREFIX+'plain.xml': cap('plain'),
+            PREFIX+'patagonia.xml': cap('patagonia').replace(b'2026-10-25T10:00:00Z', b'2026-10-25T10:00:01Z'),
+        }
+        for _ in range(2):
+            body = self.query().json()
+            self.assertEqual(body['estado'], 'disponible')
+            self.assertEqual([row['identificador'] for row in body['alertas']], ['patagonia'])
+            self.assertEqual(body['alertas'][0]['url'], PREFIX+'patagonia.xml')
+        self.assertEqual(self.download.call_count, 3)
+
+    def test_similar_official_notices_with_material_differences_are_not_merged(self):
+        for before, after in [
+            (b'<severity>Moderate</severity>', b'<severity>Severe</severity>'),
+            (b'2026-10-26T12:00:00Z', b'2026-10-26T13:00:00Z'),
+            (b'2026-10-25T13:00:00Z', b'2026-10-25T14:00:00Z'),
+            (b'<instruction>', b'<instruction>Otra indicacion. '),
+            (b'Zona de prueba', b'Otra zona de prueba'),
+            (b'<description>', b'<description>Otra descripcion. '),
+        ]:
+            cache.clear()
+            self.documents = {alerts.FEED: feed('first', 'second'),
+                              PREFIX+'first.xml': cap('first'),
+                              PREFIX+'second.xml': cap('second').replace(before, after)}
+            self.assertEqual(len(self.query().json()['alertas']), 2)
+
     def test_stale_feed_and_unsafe_xml_are_unavailable(self):
         for payload in (feed('notice', published='Fri, 23 Oct 2026 12:00:00 GMT'), b'<!DOCTYPE rss [<!ENTITY x "unsafe">]><rss/>', b'<html/>', b'x'*(alerts.MAX_BYTES+1)):
             cache.clear(); self.documents[alerts.FEED] = payload
@@ -159,7 +187,7 @@ class OfficialAlertsTests(SimpleTestCase):
             attempts.append(url)
             if url == PREFIX+'slow.xml' and attempts.count(url) == 1:
                 raise httpx.ReadTimeout('private details must not be exposed')
-            return cap('second') if url == PREFIX+'slow.xml' else self.documents[url]
+            return cap('second').replace(b'<description>', b'<description>Otro aviso. ') if url == PREFIX+'slow.xml' else self.documents[url]
         self.download.side_effect = download
         first = self.query().json()
         self.assertEqual(first['estado'], 'parcial')
