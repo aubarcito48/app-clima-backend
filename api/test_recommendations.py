@@ -36,6 +36,36 @@ def completion(content="Llevá un abrigo liviano si volvés de noche.", finish="
 
 
 class RecommendationContextTests(SimpleTestCase):
+    def test_readable_times_follow_city_offset_and_distinguish_day_periods(self):
+        for utc, expected in [
+            ('2026-11-17T12:00:00Z', '2026-11-17, 9 de la mañana'),
+            ('2026-11-17T18:00:00Z', '2026-11-17, 3 de la tarde'),
+            ('2026-11-18T00:00:00Z', '2026-11-17, 9 de la noche'),
+            ('2026-11-18T03:00:00Z', '2026-11-18, medianoche'),
+            ('2026-11-17T15:00:00Z', '2026-11-17, mediodía'),
+            ('2026-11-18T06:00:00Z', '2026-11-18, 3 de la madrugada'),
+            ('2026-11-18T12:30:00Z', '2026-11-18, 9 y 30 de la mañana'),
+        ]:
+            with self.subTest(utc=utc):
+                snapshot = weather_snapshot()
+                snapshot.ubicacion['desplazamiento_horario_segundos'] = -10800
+                snapshot.actual['fecha_utc'] = '2026-11-17T18:00:00Z'
+                snapshot.pronostico['intervalos'][0]['fecha_utc'] = utc
+                data = json.loads(build_messages(snapshot)[1]['content'])
+                self.assertEqual(data['actual']['momento_local'], '2026-11-17, 3 de la tarde')
+                self.assertEqual(data['pronostico']['intervalos'][0]['momento_local'], expected)
+                self.assertEqual(data['pronostico']['intervalos'][0]['fecha_utc'], utc)
+                self.assertNotIn('momento_local', snapshot.pronostico['intervalos'][0])
+
+    def test_times_support_other_offsets_and_english_without_spanish_day_periods(self):
+        snapshot = weather_snapshot()
+        snapshot.ubicacion['desplazamiento_horario_segundos'] = 19800
+        snapshot.actual['fecha_utc'] = '2026-11-17T23:00:00Z'
+        messages = build_messages(snapshot, language='en')
+        self.assertEqual(json.loads(messages[1]['content'])['actual']['momento_local'], '2026-11-18, 4:30 a.m.')
+        self.assertIn('Always specify a.m. or p.m.', messages[0]['content'])
+        self.assertNotIn('9 de la mañana', messages[0]['content'])
+
     def test_context_includes_location_real_measurements_units_and_explicit_nulls(self):
         snapshot = weather_snapshot()
         snapshot.actual.update(temperatura_c=0, humedad_pct=None, viento_kmh=0)

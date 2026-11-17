@@ -1,6 +1,6 @@
 """Consejos breves con Groq. No guarda consultas ni modifica el clima recibido."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import math
 import re
@@ -32,6 +32,14 @@ Que suene natural al leerlo en voz alta, sin forzar lunfardo, muletillas,
 ENGLISH_STYLE = """Use warm, practical, natural English throughout the advice.
 Use everyday clothing vocabulary and direct suggestions such as "Wear a light jacket"
 when justified by the weather. Do not mix in Spanish words or regional verb forms."""
+SPANISH_TIME_STYLE = """Si mencionás horarios, usá momento_local de la ciudad, nunca UTC.
+Escribí la hora con su período: «9 de la mañana», «3 de la tarde», «9 de la noche»
+o «de la madrugada»; usá «mediodía» y «medianoche» cuando corresponda.
+No abrevies como «9 h» o «15:00». Aclará si es al día siguiente comparando
+las fechas de momento_local con la del clima actual."""
+ENGLISH_TIME_STYLE = """For times, use the city's momento_local, never UTC.
+Always specify a.m. or p.m., or noon/midnight; never an ambiguous hour like "9 h".
+Clarify if it is the next day by comparing momento_local dates with current weather."""
 ADVICE_PROMPT = f"""Sos un asistente que interpreta el clima para planes cotidianos.
 Priorizá recomendar qué ropa y calzado usar según la temperatura, la sensación
 térmica, el viento y la lluvia informados. Sugerí abrigo, capas o paraguas solo
@@ -40,6 +48,7 @@ Escribí un consejo breve en español en hasta dos frases,
 {MAX_OUTPUT_WORDS} palabras y {MAX_OUTPUT_CHARACTERS} caracteres, incluidos espacios.
 Conservá lo esencial: qué ponerse y el motivo climático; si hay un cambio
 importante para más tarde, indicá cómo adaptar la ropa en la segunda frase.
+{SPANISH_TIME_STYLE}
 Evitá enumerar mediciones que ya aparecen en la tarjeta. Mencioná como máximo
 una temperatura relevante y solo los datos que cambien la recomendación.
 No agregues saludos, despedidas ni relleno. Usá únicamente los datos meteorológicos del JSON.
@@ -102,6 +111,29 @@ def _valid_date(value):
         return False
 
 
+def _local_moment(value, offset, language):
+    """Ground readable clock times in the location's offset, including date rollovers."""
+    if not _valid_date(value):
+        return None
+    try:
+        local = datetime.fromisoformat(value).astimezone(timezone(timedelta(seconds=offset)))
+    except (ValueError, OverflowError):
+        return None
+    hour, minute = local.hour, local.minute
+    clock = str(hour % 12 or 12)
+    if language == 'en':
+        clock += f':{minute:02d}' if minute else ''
+        clock += ' a.m.' if hour < 12 else ' p.m.'
+    elif minute == 0 and hour in (0, 12):
+        clock = 'medianoche' if hour == 0 else 'mediodía'
+    else:
+        clock += f' y {minute}' if minute else ''
+        period = ('madrugada' if hour < 6 else 'mañana' if hour < 12
+                  else 'tarde' if hour < 20 else 'noche')
+        clock += ' de la ' + period
+    return f'{local.date().isoformat()}, {clock}'
+
+
 def build_messages(snapshot: WeatherSnapshot, *, language='es', director=None):
     director = _director_mode() if director is None else director
     if director not in ('groq', 'local'):
@@ -157,12 +189,15 @@ def build_messages(snapshot: WeatherSnapshot, *, language='es', director=None):
         },
         "unidades": {"temperatura": "°C", "viento": "km/h", "humedad": "%", "fecha": "UTC"},
     }
+    context['actual']['momento_local'] = _local_moment(current.get('fecha_utc'), offset, language)
+    for interval in context['pronostico']['intervalos']:
+        interval['momento_local'] = _local_moment(interval.get('fecha_utc'), offset, language)
     serialized = json.dumps(context, ensure_ascii=False, allow_nan=False)
     if len(serialized) > MAX_CONTEXT_CHARACTERS:
         raise InvalidRecommendationContext()
     prompt = _system_prompt(director)
     if language == 'en':
-        prompt = prompt.replace(SPANISH_STYLE, ENGLISH_STYLE).replace('consejo breve en español', 'consejo breve en inglés')
+        prompt = prompt.replace(SPANISH_STYLE, ENGLISH_STYLE).replace(SPANISH_TIME_STYLE, ENGLISH_TIME_STYLE).replace('consejo breve en español', 'consejo breve en inglés')
     return [
         {"role": "system", "content": prompt},
         {"role": "user", "content": serialized},

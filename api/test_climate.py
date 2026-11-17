@@ -139,6 +139,7 @@ class ClimateIntegrationTests(SimpleTestCase):
             self.assertEqual((params["lat"], params["lon"]), (-31.42, -64.18))
         context = json.loads(json.loads(self.groq_requests[0].content)["messages"][1]["content"])
         self.assertEqual(context["ubicacion"]["nombre"], payload["ubicacion"]["nombre"])
+        self.assertEqual(context['actual'].pop('momento_local'), '2026-10-24, 2 de la tarde')
         self.assertEqual(context["actual"], payload["actual"])
 
     def test_groq_errors_empty_or_truncated_text_produce_200_with_current_weather(self):

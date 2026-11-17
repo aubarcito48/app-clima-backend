@@ -1,4 +1,5 @@
 from unittest.mock import patch
+import json
 
 from django.test import SimpleTestCase
 
@@ -30,7 +31,17 @@ class LanguageTests(SimpleTestCase):
         snapshot = weather_snapshot()
         spanish = build_messages(snapshot)
         english = build_messages(snapshot, language='en')
-        self.assertEqual(spanish[1], english[1])
+        spanish_data = json.loads(spanish[1]['content'])
+        english_data = json.loads(english[1]['content'])
+        # Only the readable clock wording changes; dates and measurements agree.
+        for es_row, en_row in zip(
+            [spanish_data['actual'], *spanish_data['pronostico']['intervalos']],
+            [english_data['actual'], *english_data['pronostico']['intervalos']],
+        ):
+            es_time = es_row.pop('momento_local')
+            en_time = en_row.pop('momento_local')
+            self.assertEqual(es_time.split(',')[0], en_time.split(',')[0])
+        self.assertEqual(spanish_data, english_data)
         self.assertIn('consejo breve en inglés', english[0]['content'])
         self.assertNotIn('en español', english[0]['content'])
         self.assertIn('No inventes', english[0]['content'])
