@@ -185,3 +185,34 @@ class OfficialAlertsTests(SimpleTestCase):
         with client, self.assertRaises(httpx.HTTPStatusError): DOWNLOAD(client, alerts.FEED)
         client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'x'*(alerts.MAX_BYTES+1))))
         with client, self.assertRaises(ValueError): DOWNLOAD(client, alerts.FEED)
+
+    def test_source_rate_limit_stops_additional_downloads_during_backoff(self):
+        calls = []
+        def reply(request):
+            calls.append(request)
+            return httpx.Response(429, headers={'Retry-After': '90'})
+        with httpx.Client(transport=httpx.MockTransport(reply)) as client:
+            with self.assertRaises(alerts.SMNRateLimited):
+                DOWNLOAD(client, alerts.FEED)
+            with self.assertRaises(alerts.SMNRateLimited):
+                DOWNLOAD(client, PREFIX+'notice.xml')
+        self.assertEqual(len(calls), 1)
+
+    def test_backoff_preserves_previously_verified_notices_as_partial(self):
+        first = self.query().json()
+        self.assertEqual(first['estado'], 'disponible')
+        self.clock.return_value = NOW + timedelta(seconds=181)
+        cache.set(alerts.BACKOFF_KEY, True, 90)
+        second = self.query().json()
+        self.assertEqual(second['estado'], 'parcial')
+        self.assertEqual(len(second['alertas']), 1)
+        self.assertEqual(self.download.call_count, 2)
+
+    def test_http_date_retry_after_is_respected(self):
+        response = lambda request: httpx.Response(429, headers={
+            'Retry-After': 'Sun, 25 Oct 2026 12:01:30 GMT'})
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            with patch.object(alerts.cache, 'set', wraps=cache.set) as remember:
+                with self.assertRaises(alerts.SMNRateLimited):
+                    DOWNLOAD(client, alerts.FEED)
+                remember.assert_called_once_with(alerts.BACKOFF_KEY, True, 90)

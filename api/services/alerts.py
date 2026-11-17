@@ -7,6 +7,7 @@ import math
 import hashlib
 import re
 import threading
+import time
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 
@@ -21,9 +22,18 @@ MAX_BYTES = 1024 * 1024
 CACHE_KEY = "smn-cap-catalog-v3"
 MAX_DOCUMENTS = 256
 _catalog_lock = threading.Lock()
+_download_lock = threading.Lock()
+_last_download = 0
+BACKOFF_KEY = 'smn-provider-backoff-v1'
+
+
+class SMNRateLimited(ValueError):
+    pass
 
 
 def _failure_reason(error, stage):
+    if isinstance(error, SMNRateLimited):
+        return stage + '_http_429'
     if isinstance(error, httpx.HTTPStatusError):
         return f'{stage}_http_{error.response.status_code}'
     if isinstance(error, httpx.TimeoutException):
@@ -160,7 +170,33 @@ def _parse_cap(body, url):
 
 
 def _download(client, url):
+    global _last_download
+    # Single paced connection for documents. Shared Render egress can be throttled.
+    # Honor a provider backoff before opening any further source request.
+    with _download_lock:
+        if cache.get(BACKOFF_KEY):
+            raise SMNRateLimited()
+        if url != FEED:
+            delay = .5 - (time.monotonic() - _last_download)
+            if delay > 0:
+                time.sleep(delay)
+            _last_download = time.monotonic()
+        return _download_response(client, url)
+
+
+def _download_response(client, url):
     with client.stream("GET", url, headers={"Accept": "application/xml, text/xml, application/rss+xml"}) as response:
+        if response.status_code == 429:
+            try:
+                delay = int(response.headers.get('Retry-After', '60'))
+            except ValueError:
+                try:
+                    retry_date = parsedate_to_datetime(response.headers['Retry-After'])
+                    delay = math.ceil((retry_date - timezone.now()).total_seconds())
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    delay = 60
+            cache.set(BACKOFF_KEY, True, max(60, min(delay, 86400)))
+            raise SMNRateLimited()
         response.raise_for_status()
         chunks, size = [], 0
         for chunk in response.iter_bytes():
@@ -200,9 +236,9 @@ def _load_catalog(now):
                 return cached['record']
             result = _parse_cap(_download(client, url), url)
             # Keep successful downloads while retrying the missing documents.
-            cache.set(key, {'record': result}, 180)
+            cache.set(key, {'record': result}, 900)
             return result
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             tasks = [pool.submit(document, url) for url in urls]
             done, pending = wait(tasks, timeout=16)
             for task in pending:
@@ -235,6 +271,15 @@ def _catalog(now):
     cached = fresh()
     if cached is not None:
         return cached
+    if cache.get(BACKOFF_KEY):
+        # Preserve already verified notices during the wait, without claiming completeness.
+        previous = cache.get(CACHE_KEY)
+        if previous is not None:
+            previous['partial'] = True
+            previous['verification']['fallos']['documento_http_429'] = max(
+                1, previous['verification']['fallos'].get('documento_http_429', 0))
+            return previous
+        raise SMNRateLimited()
     # Share catalog across cities without a burst of duplicate feed downloads.
     if not _catalog_lock.acquire(blocking=False):
         raise ValueError('Catalog refresh already pending')
@@ -243,7 +288,7 @@ def _catalog(now):
         if cached is not None:
             return cached
         result = _load_catalog(now)
-        cache.set(CACHE_KEY, result, 30 if result['partial'] else 180)
+        cache.set(CACHE_KEY, result, 900)
         return result
     finally:
         _catalog_lock.release()

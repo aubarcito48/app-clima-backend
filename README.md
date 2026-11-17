@@ -18,19 +18,23 @@ Ver [configuración, pruebas y límites de la protección](docs/GROQ-USAGE-GUARD
 
 ## Mapas y alertas oficiales
 
-El frontend ofrece un mapa bajo demanda junto a las alertas: temperatura, lluvia
+El frontend abre un mapa automáticamente junto a las alertas: temperatura, lluvia
 y viento mediante Weather Maps 1.0. `GET /api/v1/mapa/` actúa como proxy fijo de
 imágenes PNG; usa la clave existente de OpenWeather sin entregarla al navegador.
 Mantiene hasta 32 imágenes por proceso durante cinco minutos y corta ráfagas
 cuando el proveedor falla. Límites iniciales: 40 solicitudes/minuto por proceso
 y 24 por visitante. No requiere disco, variables nuevas ni llamadas a Groq.
-El mapa base utiliza OpenStreetMap con atribución visible; no se precarga.
+El mapa base utiliza OpenStreetMap con atribución visible; no se carga antes de
+seleccionar una ciudad. Se puede cerrar manualmente.
 
 El catálogo SMN admite hasta 256 documentos únicos e incluye la ruta oficial
 `avisocortoplazo`, además de las alertas generales. Se conserva el estado parcial
 si un documento falla, se supera el límite o no termina a tiempo. Las consultas
 comparten catálogo por tres minutos (30 segundos si fue parcial), sin duplicar
-descargas concurrentes dentro del proceso. Los textos oficiales conservan español.
+descargas concurrentes dentro del proceso. Los documentos válidos se conservan
+15 minutos para reintentar solo los faltantes. Las descargas van espaciadas y un
+HTTP 429 detiene nuevas solicitudes durante el backoff. La tarjeta diferencia
+este límite del SMN de otros fallos. Los textos oficiales conservan español.
 
 ## Buscador local de ciudades
 
