@@ -61,9 +61,9 @@ def main():
         finally:
             partial.unlink(missing_ok=True)
     print('Piper instalado: Sharvard (es) y Cori (en). Reiniciá Django para usar las voces de Isa.')
-    if os.getenv('ISA_LIP_SYNC', 'off').strip().lower() == 'rhubarb':
-        from install_rhubarb import install
-        install()
+    if os.getenv('ISA_LIP_SYNC', 'own').strip().lower() != 'off':
+        from prepare_isa_alignment import prepare
+        prepare(args.target)
 
 
 if __name__ == '__main__':

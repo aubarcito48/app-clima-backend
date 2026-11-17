@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "reference": "weak-rhubarb",
+  "recordings": [
+    {"id":"es-train-01","language":"es","split":"train","text":"Mamá prepara pan para mañana. Bebé, vení a ver las nubes."},
+    {"id":"es-train-02","language":"es","split":"train","text":"La lluvia vuelve por la tarde. Llevá una bufanda liviana y ropa seca."},
+    {"id":"es-train-03","language":"es","split":"train","text":"Hoy el sol sale temprano y el aire está fresco. Tomá agua y buscá sombra."},
+    {"id":"es-train-04","language":"es","split":"train","text":"El viento sopla fuerte del sur. Cerrá bien la ventana antes de salir."},
+    {"id":"es-train-05","language":"es","split":"train","text":"Hay humedad y niebla en la ruta. Conducí despacio, con luces y mucha atención."},
+    {"id":"es-train-06","language":"es","split":"train","text":"La temperatura baja de treinta a quince grados. Una campera puede venirte bien."},
+    {"id":"es-dev-01","language":"es","split":"dev","text":"Antes de pasear por el parque, revisá si habrá tormentas cerca de tu ciudad."},
+    {"id":"es-dev-02","language":"es","split":"dev","text":"Son nueve grados bajo cero. Ponete guantes y protegé las manos del frío."},
+    {"id":"es-test-01","language":"es","split":"test","text":"Mañana tendremos un cielo parcialmente nublado, sin lluvias hasta después del mediodía."},
+    {"id":"es-test-02","language":"es","split":"test","text":"Durante la noche podría helar. Si vas en bicicleta, abrigate y usá elementos reflectantes."},
+    {"id":"en-train-01","language":"en","split":"train","text":"Mum packed bread for the picnic. Bring a warm blanket and a blue umbrella."},
+    {"id":"en-train-02","language":"en","split":"train","text":"The weather feels fresh this morning. Wear a light jacket before you leave."},
+    {"id":"en-train-03","language":"en","split":"train","text":"Clouds will cover the valley later. Heavy rain may arrive before seven."},
+    {"id":"en-train-04","language":"en","split":"train","text":"Strong winds blow from the south. Close the windows and move loose objects indoors."},
+    {"id":"en-train-05","language":"en","split":"train","text":"The sun is bright and the air is dry. Use sunscreen and drink plenty of water."},
+    {"id":"en-train-06","language":"en","split":"train","text":"Temperatures will fall from thirty to fifteen degrees. Take warm clothes for the evening."},
+    {"id":"en-dev-01","language":"en","split":"dev","text":"Before walking through the forest, check the forecast for thunderstorms in your area."},
+    {"id":"en-dev-02","language":"en","split":"dev","text":"It is nine degrees below zero. Put on gloves and protect your face from the cold."},
+    {"id":"en-test-01","language":"en","split":"test","text":"Tomorrow should be partly cloudy, with no showers expected until after midday."},
+    {"id":"en-test-02","language":"en","split":"test","text":"Frost is possible overnight. If you cycle home, wear layers and reflective clothing."}
+  ]
+}

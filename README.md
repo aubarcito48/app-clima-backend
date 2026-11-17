@@ -38,10 +38,11 @@ El director local tiene [reglas separadas para español e inglés](docs/isa-loca
 la interfaz sigue siendo la misma y el español conserva su comportamiento aprobado.
 Los ajustes ingleses se pueden calibrar independientemente en su propio módulo.
 
-La [fase 3: ensayo de Rhubarb](docs/isa-local/PHASE-3.md) se activa aparte con
-`ISA_LIP_SYNC=rhubarb`. Analiza el audio después de que sale Piper y agrega marcas
-opcionales al WAV, con fallback al audio original. Todavía no cambia la animación
-facial: primero se evalúan recursos y después se integran las imágenes de boca.
+El [clasificador propio RF V2](docs/isa-local/OWN-PRODUCTION.md) usa los fonemas y
+tiempos de la misma síntesis de Piper. `ISA_LIP_SYNC=own` es el valor predeterminado.
+La inferencia corre después de Piper y agrega marcas al WAV. El valor heredado
+`rhubarb` también selecciona el motor propio; Rhubarb ya no se ejecuta en la ruta
+de voz. Los ensayos históricos se conservan como referencia.
 
 Groq devuelve JSON con `texto` y `segmentos`: entre uno y cuatro fragmentos que,
 unidos con un espacio, deben reproducir exactamente el consejo. Cada fragmento
@@ -158,12 +159,12 @@ Build Command, ejecutado desde la raíz del backend:
 python -m pip install --upgrade pip==26.2.2 && python -m pip install -r requirements-production.txt && python scripts/install_voice.py
 ```
 
-Si `ISA_LIP_SYNC=rhubarb` está definido durante el build, `install_voice.py`
-instala además el runtime verificado de Rhubarb (con licencia, sin demos/tests).
-Con `off` no lo descarga. Ver [activación, métricas y vuelta atrás](docs/isa-local/PHASE-3.md).
+Con `ISA_LIP_SYNC=own`, el build prepara copias de las voces con salida de
+duraciones, sin modificar los archivos originales. No descarga Rhubarb.
+Ver [activación, métricas y vuelta atrás](docs/isa-local/OWN-PRODUCTION.md).
 
-Para el ensayo ampliado, Rhubarb tiene hasta 60 segundos independientes de los
-45 de Piper (`ISA_RHUBARB_TIMEOUT_SECONDS`, entre 1 y 60). El frontend espera
+El clasificador propio tiene hasta 30 segundos independientes de los
+45 de Piper. El frontend espera
 120 segundos y `gunicorn.conf.py` configura 130. Si el Start Command contiene
 un `--timeout` explícito, usar al menos 130 porque ese argumento prevalece.
 

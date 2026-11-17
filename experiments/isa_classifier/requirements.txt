@@ -1,0 +1,3 @@
+# Experimental tools only. Do not add these to the web service requirements.
+numpy==2.4.4
+Pillow==12.2.0

@@ -36,6 +36,12 @@ def main():
     if not model.is_file() or not config_path.is_file():
         return 1
     performance = '--performance' in sys.argv[3:]
+    own_lips = '--own-lip-sync' in sys.argv[3:]
+    if own_lips:
+        model = model_dir / (model_name + '.aligned.onnx')
+        if not model.is_file():
+            return 1
+    phones, mouth_cues = [], []
     raw = sys.stdin.buffer.read(8193 if performance else 2401).decode('utf-8')
     payload = json.loads(raw) if performance else None
     text = payload['texto'] if performance else raw
@@ -85,19 +91,34 @@ def main():
                 for index, chunk in enumerate(chunks):
                     ids = voice.phonemes_to_ids(chunk)
                     trace_voice_memory('inference_start', index, tokens=len(ids))
-                    samples = voice.phoneme_ids_to_audio(ids, synthesis)
+                    if own_lips:
+                        from api.services.isa_ml.phonetic_alignment import grouped_durations, expand_diphthongs, phone_shapes, append_cue
+                        samples, counts = voice.phoneme_ids_to_audio(ids, synthesis, include_alignments=True)
+                        rows = expand_diphthongs(grouped_durations(chunk, config.phoneme_id_map, ids, counts, len(samples)))
+                    else:
+                        samples = voice.phoneme_ids_to_audio(ids, synthesis)
                     trace_voice_memory('inference_done', index)
                     if not len(samples) or not np.isfinite(samples).all():
                         return 1
                     pause_ms = 80 if previous_chunk and previous_chunk[-1] in '.!?;:' else 20
                     pause_frames = SAMPLE_RATE * pause_ms // 1000 if previous_chunk else 0
-                    frames += pause_frames + len(samples)
-                    if frames > SAMPLE_RATE * 90:
+                    if frames + pause_frames + len(samples) > SAMPLE_RATE * 90:
                         return 1
                     if pause_frames:
                         wav.writeframesraw(b'\x00\x00' * pause_frames)
+                        if own_lips:
+                            append_cue(mouth_cues, frames / SAMPLE_RATE, (frames + pause_frames) / SAMPLE_RATE, 'X')
+                    frames += pause_frames
+                    if own_lips:
+                        cursor = frames
+                        for row, shape in zip(rows, phone_shapes(rows, language)):
+                            end = cursor + row['samples']
+                            phones.append({**row, 'start': cursor / SAMPLE_RATE, 'end': end / SAMPLE_RATE, 'shape': shape})
+                            append_cue(mouth_cues, cursor / SAMPLE_RATE, end / SAMPLE_RATE, shape)
+                            cursor = end
                     pcm = (np.clip(samples * segment['energy'], -1, 1) * 32767).astype('<i2').tobytes()
                     wav.writeframesraw(pcm)
+                    frames += len(samples)
                     del samples, pcm
                     trace_voice_memory('chunk_done', index)
                     previous_chunk = chunk
@@ -108,11 +129,19 @@ def main():
                     return 1
                 if pause_frames:
                     wav.writeframesraw(b'\x00\x00' * pause_frames)
+                    if own_lips:
+                        append_cue(mouth_cues, speech_end, frames / SAMPLE_RATE, 'X')
                 timeline.append({'from': start, 'speech_end': speech_end,
                                  'until': frames / SAMPLE_RATE, 'gesture': segment['gesture']})
     trace_voice_memory('complete')
     audio = output.getvalue()
-    sys.stdout.buffer.write(append_timeline(audio, timeline) if performance else audio)
+    audio = append_timeline(audio, timeline) if performance else audio
+    if own_lips:
+        from api.services.own_lip_sync import attach_alignment
+        if phones[-1]['end'] < frames / SAMPLE_RATE:
+            phones.append({'phoneme': '.', 'start': phones[-1]['end'], 'end': frames / SAMPLE_RATE})
+        audio = attach_alignment(audio, {'phonemes': phones, 'cues': mouth_cues})
+    sys.stdout.buffer.write(audio)
     return 0
 
 

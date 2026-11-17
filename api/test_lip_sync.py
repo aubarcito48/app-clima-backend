@@ -99,36 +99,37 @@ class OptionalRecognizerTests(SimpleTestCase):
 
 @override_settings(ISA_LIP_SYNC='rhubarb', ISA_RHUBARB_PATH=Path('test/rhubarb'), ISA_RHUBARB_TIMEOUT_SECONDS=60)
 class VoiceLipIntegrationTests(SimpleTestCase):
-    @patch('api.services.voice.add_lip_sync')
+    @patch('api.services.voice.classify_after_synthesis')
     @patch('api.services.voice.subprocess.run')
     def test_recognizer_runs_only_after_piper_exits_with_gate_still_locked(self, run, lip):
         run.return_value = SimpleNamespace(returncode=0, stdout=sample_wav())
-        def recognize(audio, executable, **options):
+        def recognize(audio, language):
             self.assertEqual(run.call_count, 1)
             self.assertTrue(_gate.locked())
             with self.assertRaises(VoiceBusy):
                 synthesize('Second request')
-            self.assertEqual(options['timeout'], 60)
+            self.assertEqual(language, 'es')
             return audio
         lip.side_effect = recognize
         self.assertEqual(synthesize('Usá abrigo.'), sample_wav())
         self.assertFalse(_gate.locked())
 
     @override_settings(ISA_LIP_SYNC='off')
-    @patch('api.services.voice.add_lip_sync')
+    @patch('api.services.voice.classify_after_synthesis')
     @patch('api.services.voice.subprocess.run')
     def test_off_retains_previous_path(self, run, lip):
         run.return_value = SimpleNamespace(returncode=0, stdout=sample_wav())
         self.assertEqual(synthesize('Usá abrigo.'), sample_wav())
         lip.assert_not_called()
 
-    @override_settings(ISA_RHUBARB_TIMEOUT_SECONDS=25)
-    @patch('api.services.voice.add_lip_sync', side_effect=lambda audio, *args, **kwargs: audio)
+    @override_settings(ISA_LIP_SYNC='own')
+    @patch('api.services.voice.classify_after_synthesis', side_effect=lambda audio, *args, **kwargs: audio)
     @patch('api.services.voice.subprocess.run')
     def test_recognizer_has_its_own_configured_budget_after_piper(self, run, lip):
         run.return_value = SimpleNamespace(returncode=0, stdout=sample_wav())
         synthesize('Usá abrigo.')
-        self.assertEqual(lip.call_args.kwargs['timeout'], 25)
+        self.assertEqual(lip.call_args.args[1], 'es')
+        self.assertIn('--own-lip-sync', run.call_args.args[0])
 
 
 class RuntimeInstallerTests(SimpleTestCase):

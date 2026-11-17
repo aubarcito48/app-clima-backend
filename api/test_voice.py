@@ -83,6 +83,19 @@ class VoiceEndpointTests(SimpleTestCase):
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response['Retry-After'], '5')
 
+    @patch('api.voice_views.synthesize', side_effect=VoiceBusy())
+    def test_busy_wait_is_readable_by_the_allowed_frontend_only(self, synth):
+        for origin, allowed in [('http://localhost:4200', True), ('https://untrusted.example', False)]:
+            with self.subTest(origin=origin):
+                response = self.client.post('/api/v1/voz/', json.dumps({'texto': 'Hola'}),
+                    content_type='application/json', HTTP_ORIGIN=origin)
+                self.assertEqual(response.status_code, 429)
+                if allowed:
+                    self.assertEqual(response['Access-Control-Allow-Origin'], origin)
+                    self.assertIn('retry-after', response['Access-Control-Expose-Headers'].lower())
+                else:
+                    self.assertNotIn('Access-Control-Allow-Origin', response)
+
     def test_json_post_preflight_for_angular(self):
         response = self.client.options('/api/v1/voz/', HTTP_ORIGIN='http://localhost:4200',
             HTTP_ACCESS_CONTROL_REQUEST_METHOD='POST', HTTP_ACCESS_CONTROL_REQUEST_HEADERS='content-type')

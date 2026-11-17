@@ -43,6 +43,7 @@ CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = False
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 CORS_ALLOW_METHODS = ["GET", "POST", "OPTIONS"]
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 CORS_URLS_REGEX = r"^/api(?:/|$)"
 
 # Vacíos hasta integrar los proveedores. Nunca se entregan al frontend.
@@ -58,9 +59,10 @@ ISA_DIRECTOR = os.getenv('ISA_DIRECTOR', 'groq').strip().lower()
 if ISA_DIRECTOR not in ('groq', 'local'):
     raise ImproperlyConfigured('ISA_DIRECTOR must be groq or local')
 ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'models' / 'piper-sharvard')
-ISA_LIP_SYNC = os.getenv('ISA_LIP_SYNC', 'off').strip().lower()
-if ISA_LIP_SYNC not in ('off', 'rhubarb'):
-    raise ImproperlyConfigured('ISA_LIP_SYNC must be off or rhubarb')
+ISA_LIP_SYNC = os.getenv('ISA_LIP_SYNC', 'own').strip().lower()
+# Legacy deployment value selects our engine too; no Rhubarb process is launched.
+if ISA_LIP_SYNC not in ('off', 'own', 'rhubarb'):
+    raise ImproperlyConfigured('ISA_LIP_SYNC must be own or off')
 ISA_RHUBARB_TIMEOUT_SECONDS = env_int('ISA_RHUBARB_TIMEOUT_SECONDS', 60, minimum=1, maximum=60)
 ISA_RHUBARB_PATH = Path(os.getenv('ISA_RHUBARB_PATH', '').strip() or (
     BASE_DIR / 'models' / 'rhubarb' / 'runtime' / ('rhubarb.exe' if os.name == 'nt' else 'rhubarb')

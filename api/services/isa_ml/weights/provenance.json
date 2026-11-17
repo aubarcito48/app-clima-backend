@@ -1,0 +1,17 @@
+{
+  "release": "isa-rf-v2",
+  "weights_sha256": {
+    "es": "08b5cd86778d96dd34bfa3438df9c5bfd8a06dee60d818bc1e7b9fcbb900f7eb",
+    "en": "c2a17dd377e1494797cd45d417f17e5e3c46fd9d2bfd24603167afd7b0aa99f1"
+  },
+  "source_sha256": {
+    "classifier": "60d9dcdc9706fadbdcf836fd52ed6a815b5ccdbf4da09588cfb8748e480125d8",
+    "temporal": "13b16de4bbd40e5e760c036682d83ab976b78f37c336e36bbedb6c83ee53fc38",
+    "boosted_classifier": "b66357920def0c597288f2cae70d4c05078e115b241f461b4cff04bbbf02821c",
+    "forest_classifier": "48373db5e04c8bd89965b9623ec738b1a60d5a5ca61baede7f3c10b891ecb668",
+    "rhythm_features": "ff5d8cd918ae0aa6d8a421857512ebe44ca7e0a8cfb3c2de504e27fcd607cfa1",
+    "phonetic_features": "f398bdf17bef0c612cebe0448cca1354f25f9212e1c92e4453fe5eca92a33ce3",
+    "phoneme_identity": "0ada4229cb41d60432bdc689fae90f961ee52bb7eaa3a0b4e1106d455791290d",
+    "phonetic_alignment": "e4d7f405ae4eeeed958cb528a85a5893f0e3876b747af5a67be95dd19b3e5012"
+  }
+}
