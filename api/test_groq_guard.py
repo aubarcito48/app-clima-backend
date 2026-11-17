@@ -1,11 +1,8 @@
-"""No live requests: concurrent reservations, cache isolation and safe degradation."""
+"""Cache and visitor protections without disk, database or live provider calls."""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 from copy import deepcopy
-import os
-from pathlib import Path
-import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.http import HttpResponse
@@ -14,21 +11,19 @@ import httpx
 
 from .request_limits import ApiRequestLimitsMiddleware, RequestBudget, visitor_key
 from .services.climate import query_climate
-from .services.groq_guard import AdviceBudget, cache_key
+from .services.groq_guard import AdviceCache, cache_key
 from .services.recommendations import build_messages, generate_recommendation
 from .test_recommendations import weather_snapshot, completion
 
 
 @override_settings(GROQ_GUARD_ENABLED=True, GROQ_API_KEY='DUMMY', GROQ_MODEL='test-model',
-                   GROQ_DAILY_REQUEST_LIMIT=2, GROQ_CACHE_TTL_SECONDS=300, GROQ_CACHE_MAX_ENTRIES=10)
+                   GROQ_CACHE_TTL_SECONDS=300, GROQ_CACHE_MAX_ENTRIES=10)
 class GuardTests(SimpleTestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory(dir=os.getenv('GROQ_BUDGET_TEST_ROOT'))
-        self.addCleanup(self.directory.cleanup)
-        self.path = str(Path(self.directory.name) / 'budget.sqlite3')
-        config = override_settings(GROQ_BUDGET_PATH=self.path)
-        config.enable()
-        self.addCleanup(config.disable)
+        self.cache = AdviceCache()
+        patcher = patch('api.services.groq_guard.advice_cache', self.cache)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.calls = []
 
     def generate(self, snapshot=None, language='es', status=200):
@@ -38,7 +33,7 @@ class GuardTests(SimpleTestCase):
         return generate_recommendation(snapshot or weather_snapshot(), language=language,
                                        transport=httpx.MockTransport(respond))
 
-    def test_identical_valid_advice_is_reused_and_returned_as_a_copy(self):
+    def test_valid_advice_is_reused_and_returned_as_a_copy(self):
         first = self.generate()
         self.assertEqual(first['estado'], 'disponible')
         text = first['texto']
@@ -46,7 +41,7 @@ class GuardTests(SimpleTestCase):
         self.assertEqual(self.generate()['texto'], text)
         self.assertEqual(len(self.calls), 1)
 
-    def test_language_weather_model_and_director_are_separate_cache_keys(self):
+    def test_language_weather_model_and_director_are_separate_keys(self):
         messages = build_messages(weather_snapshot())
         base = cache_key(messages, 'es', 'groq')
         self.assertNotEqual(base, cache_key(messages, 'en', 'groq'))
@@ -57,33 +52,22 @@ class GuardTests(SimpleTestCase):
         changed.actual['temperatura_c'] += 1
         self.assertNotEqual(base, cache_key(build_messages(changed), 'es', 'groq'))
 
-    def test_budget_denies_new_calls_but_keeps_valid_cached_advice(self):
-        self.generate()
-        self.generate(language='en')
-        changed = weather_snapshot()
-        changed.actual['temperatura_c'] += 1
-        self.assertEqual(self.generate(changed)['estado'], 'no_disponible')
-        self.assertEqual(self.generate()['estado'], 'disponible')
-        self.assertEqual(len(self.calls), 2)
-
-    def test_success_cache_expires_and_gets_a_fresh_allowance(self):
-        with patch('api.services.groq_guard.time.time', return_value=1763337600):
+    def test_success_expires_after_five_minutes(self):
+        with patch('api.services.groq_guard.time.monotonic', return_value=1000):
             self.generate()
-        with patch('api.services.groq_guard.time.time', return_value=1763337899):
+        with patch('api.services.groq_guard.time.monotonic', return_value=1299):
             self.generate()
         self.assertEqual(len(self.calls), 1)
-        with patch('api.services.groq_guard.time.time', return_value=1763337900):
+        with patch('api.services.groq_guard.time.monotonic', return_value=1300):
             self.generate()
         self.assertEqual(len(self.calls), 2)
 
-    def test_simultaneous_identical_work_has_one_reservation(self):
-        with closing(AdviceBudget(self.path).connect()):
-            pass
+    def test_parallel_identical_work_has_one_reservation(self):
         with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda _: AdviceBudget(self.path).acquire('same')[1], range(20)))
-        self.assertEqual(results.count(True), 1)
+            results = list(pool.map(lambda _: self.cache.acquire('same')[1], range(20)))
+        self.assertEqual(sum(token is not None for token in results), 1)
 
-    def test_invalid_response_is_not_cached_as_advice_and_still_consumes_attempt(self):
+    def test_invalid_response_is_not_cached_as_success(self):
         def invalid(request):
             self.calls.append(request)
             return httpx.Response(200, json=completion('', finish='length'))
@@ -92,83 +76,54 @@ class GuardTests(SimpleTestCase):
         self.assertEqual(self.generate()['estado'], 'no_disponible')
         self.assertEqual(len(self.calls), 1)
 
-    def test_failed_call_counts_and_same_failure_has_a_cooldown(self):
-        self.assertEqual(self.generate(status=429)['estado'], 'no_disponible')
-        self.generate(status=429)
+    def test_failure_cooldown_recovers_after_thirty_seconds(self):
+        with patch('api.services.groq_guard.time.monotonic', return_value=1000):
+            self.assertEqual(self.generate(status=429)['estado'], 'no_disponible')
+        with patch('api.services.groq_guard.time.monotonic', return_value=1029):
+            self.generate()
         self.assertEqual(len(self.calls), 1)
-        self.generate(language='en', status=500)
-        changed = weather_snapshot()
-        changed.actual['temperatura_c'] += 2
-        self.generate(changed)
+        with patch('api.services.groq_guard.time.monotonic', return_value=1030):
+            self.assertEqual(self.generate()['estado'], 'disponible')
         self.assertEqual(len(self.calls), 2)
 
-    def test_no_counter_or_broken_storage_never_contacts_groq(self):
-        for path in ['', 'relative.sqlite3', self.directory.name]:
-            with self.subTest(path=path), override_settings(GROQ_BUDGET_PATH=path):
-                self.assertEqual(self.generate()['estado'], 'no_disponible')
-        self.assertEqual(self.calls, [])
+    def test_abandoned_reservation_expires(self):
+        self.assertIsNotNone(self.cache.acquire('a', now=1000)[1])
+        self.assertIsNone(self.cache.acquire('a', now=1119)[1])
+        self.assertIsNotNone(self.cache.acquire('a', now=1120)[1])
 
-    @override_settings(GROQ_DAILY_REQUEST_LIMIT=0)
-    def test_zero_budget_is_a_kill_switch(self):
-        self.assertEqual(self.generate()['estado'], 'no_disponible')
-        self.assertEqual(self.calls, [])
-
-    def test_independent_store_instances_share_a_durable_daily_allowance(self):
-        self.assertTrue(AdviceBudget(self.path).acquire('a', now=1763337600)[1])
-        self.assertTrue(AdviceBudget(self.path).acquire('b', now=1763337600)[1])
-        self.assertFalse(AdviceBudget(self.path).acquire('c', now=1763337600)[1])
-
-    def test_parallel_unique_calls_cannot_overspend(self):
-        # Initialize schema before simultaneous writers; transaction handles the allowance.
-        with closing(AdviceBudget(self.path).connect()) as db:
-            db.commit()
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda i: AdviceBudget(self.path).acquire(str(i))[1], range(20)))
-        self.assertEqual(sum(results), 2)
-
-    def test_same_pending_key_is_coalesced_across_workers(self):
-        store = AdviceBudget(self.path)
-        self.assertTrue(store.acquire('same')[1])
-        self.assertEqual(AdviceBudget(self.path).acquire('same'), (None, False))
-
-    def test_midnight_resets_budget_but_clock_rollback_does_not(self):
-        store = AdviceBudget(self.path)
-        today = 1763337600
-        store.acquire('a', now=today)
-        store.acquire('b', now=today)
-        self.assertFalse(store.acquire('c', now=today + 200)[1])
-        self.assertTrue(store.acquire('c', now=today + 86400)[1])
-        self.assertFalse(store.acquire('d', now=today)[1])
-
-    def test_expiry_permits_new_attempt_without_refunding_previous_one(self):
-        store = AdviceBudget(self.path)
-        store.acquire('a', now=1000)
-        self.assertFalse(store.acquire('a', now=1119)[1])
-        self.assertTrue(store.acquire('a', now=1120)[1])
-        self.assertFalse(store.acquire('a', now=1240)[1])
+    def test_late_completion_cannot_replace_newer_work(self):
+        _, old = self.cache.acquire('a', now=1000)
+        _, new = self.cache.acquire('a', now=1120)
+        good = {'estado': 'disponible', 'texto': 'New advice'}
+        with patch('api.services.groq_guard.time.monotonic', return_value=1121):
+            self.cache.finish('a', new, good)
+            self.cache.finish('a', old, {'estado': 'no_disponible', 'texto': None})
+        self.assertEqual(self.cache.acquire('a', now=1122)[0], good)
 
     @override_settings(GROQ_CACHE_MAX_ENTRIES=1)
     def test_cache_capacity_is_bounded_and_pending_work_is_not_evicted(self):
-        store = AdviceBudget(self.path)
-        self.assertTrue(store.acquire('a', now=1000)[1])
-        self.assertFalse(store.acquire('b', now=1001)[1])
-        self.assertTrue(store.acquire('b', now=1120)[1])
+        self.assertIsNotNone(self.cache.acquire('a', now=1000)[1])
+        self.assertIsNone(self.cache.acquire('b', now=1001)[1])
+        self.assertEqual(len(self.cache.entries), 1)
+        self.assertIsNotNone(self.cache.acquire('b', now=1120)[1])
 
-    def test_database_contains_no_prompt_or_credential(self):
+    def test_no_disk_or_database_is_needed_for_ai(self):
+        with patch('sqlite3.connect', side_effect=AssertionError('No database')):
+            self.assertEqual(self.generate()['estado'], 'disponible')
+
+    def test_restart_only_clears_cache_and_does_not_disable_ai(self):
         self.generate()
-        raw = Path(self.path).read_bytes()
-        self.assertNotIn(b'DUMMY', raw)
-        self.assertNotIn(b'role', raw)
-        self.assertNotIn(b'api.groq.com', raw)
+        with patch('api.services.groq_guard.advice_cache', AdviceCache()):
+            self.assertEqual(self.generate()['estado'], 'disponible')
+        self.assertEqual(len(self.calls), 2)
 
-    @override_settings(GROQ_BUDGET_PATH='')
-    def test_weather_survives_ai_budget_unavailable(self):
+    def test_weather_survives_provider_unavailable(self):
         snapshot = weather_snapshot()
         before = deepcopy(snapshot)
         with patch('api.services.climate.resolve_location'), patch(
-                'api.services.climate.fetch_weather', return_value=snapshot):
-            # Use the public query shape used by the existing weather orchestration.
-            from types import SimpleNamespace
+                'api.services.climate.fetch_weather', return_value=snapshot), patch(
+                'api.services.recommendations._generate_uncached',
+                return_value={'estado': 'no_disponible', 'texto': None}):
             result = query_climate(SimpleNamespace(idioma='es'))
         self.assertEqual(result['actual'], before.actual)
         self.assertEqual(result['pronostico'], before.pronostico)

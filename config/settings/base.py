@@ -1,4 +1,4 @@
-"""Configuración común de la API y del presupuesto persistente de IA."""
+"""Configuración común de la API sin almacenamiento persistente."""
 
 import os
 from pathlib import Path
@@ -56,8 +56,6 @@ GROQ_CONNECT_TIMEOUT_SECONDS = env_timeout("GROQ_CONNECT_TIMEOUT_SECONDS", 3)
 GROQ_READ_TIMEOUT_SECONDS = env_timeout("GROQ_READ_TIMEOUT_SECONDS", 8)
 GROQ_MAX_COMPLETION_TOKENS = env_int("GROQ_MAX_COMPLETION_TOKENS", 160, minimum=32, maximum=512)
 GROQ_GUARD_ENABLED = env_bool('GROQ_GUARD_ENABLED', default=True)
-GROQ_BUDGET_PATH = os.getenv('GROQ_BUDGET_PATH', str(BASE_DIR / '.runtime' / 'groq.sqlite3')).strip()
-GROQ_DAILY_REQUEST_LIMIT = env_int('GROQ_DAILY_REQUEST_LIMIT', 200, minimum=0, maximum=10000)
 GROQ_CACHE_TTL_SECONDS = env_int('GROQ_CACHE_TTL_SECONDS', 300, minimum=1, maximum=900)
 GROQ_CACHE_MAX_ENTRIES = env_int('GROQ_CACHE_MAX_ENTRIES', 512, minimum=1, maximum=5000)
 # Set hops only after verifying that the ingress appends/overwrites X-Forwarded-For.

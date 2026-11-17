@@ -15,4 +15,3 @@ tmp/
 .DS_Store
 Thumbs.db
 models/
-.runtime/

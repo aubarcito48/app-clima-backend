@@ -1,4 +1,4 @@
-"""Suite sin .env ni red; catálogo fijo de lectura y presupuestos temporales aislados."""
+"""Suite sin .env ni red; solo permite el catálogo geográfico fijo de solo lectura."""
 
 import argparse
 from contextlib import ExitStack
@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import sys
 import sqlite3
-import tempfile
 from unittest.mock import patch
 
 
@@ -42,16 +41,9 @@ def main():
     # Instalar los bloqueos antes de inicializar Django. Un acceso accidental
     # falla aun si el cliente de proveedor normalmente captura errores de red.
     with ExitStack() as stack:
-        budget_root = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='groq-guard-tests-'))).resolve()
-        stack.enter_context(patch.dict(os.environ, {'GROQ_BUDGET_TEST_ROOT': str(budget_root)}))
         from api.services.place_catalog import catalog_uri
         original_connect = sqlite3.connect
         def catalog_only(database, *connect_args, **kwargs):
-            # Only new guard tests may write to their isolated, disposable budget file.
-            budget_path = Path(str(database))
-            if (budget_path.is_absolute() and budget_path.name == 'budget.sqlite3'
-                    and budget_path.resolve().is_relative_to(budget_root)):
-                return original_connect(database, *connect_args, **kwargs)
             if database != catalog_uri() or kwargs.get('uri') is not True:
                 raise AssertionError('Solo se admite el catálogo fijo con mode=ro&immutable=1')
             return original_connect(database, *connect_args, **kwargs)

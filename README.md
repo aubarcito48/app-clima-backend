@@ -4,17 +4,16 @@ API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones,
 
 ## Protección del uso de IA
 
-Caché compartida de consejos válidos por 5 minutos, máximo 200 intentos nuevos
-de Groq por día UTC y límites por visitante además del límite global por minuto.
+Caché en memoria de consejos válidos por 5 minutos y límites por visitante,
+además del límite global por minuto.
 El mismo modelo y director siguen generando los consejos. La caché incluye idioma,
 contexto meteorológico, prompt y configuración: no mezcla español e inglés.
-El presupuesto cuenta errores y llamadas interrumpidas; no hay reintentos del SDK.
-Con el cupo agotado, el clima sigue disponible y la IA devuelve `no_disponible`.
+No hay reintentos del SDK; los fallos tienen una pausa por clave de 30 segundos.
+Si Groq falla o limita su uso, el clima sigue disponible y la IA devuelve `no_disponible`.
 
-**Producción requiere `GROQ_BUDGET_PATH` absoluto en almacenamiento persistente.**
-Sin esa configuración o con el contador inaccesible, no se hacen llamadas nuevas
-a Groq. El archivo local efímero de Render no sirve como límite entre reinicios.
-No se contrató almacenamiento ni se cambió el plan del proveedor.
+Compatible con **Render Free**, sin disco, base de datos ni variables adicionales.
+Se eliminó el contador diario persistente: no hay un presupuesto global diario propio.
+La caché y los límites por minuto son por proceso y se reinician con él.
 Ver [configuración, pruebas y límites de la protección](docs/GROQ-USAGE-GUARD.md).
 
 ## Buscador local de ciudades
@@ -28,7 +27,7 @@ desempata; se excluyen alias ambiguos de tres letras mayúsculas.
 El [catálogo y su procedencia](data/README.md) se incluyen en el repositorio.
 No hay descargas durante el arranque o las consultas. No requiere un servicio
 de base de datos ni un disco persistente para el buscador: su SQLite es un índice
-estático abierto con `mode=ro&immutable=1`, separado del presupuesto de IA.
+estático abierto con `mode=ro&immutable=1`, separado de la caché de IA.
 
 Los consejos en español usan voseo y vocabulario argentino cotidiano, priorizando
 formas como «Usá una campera liviana», «llevá» y «elegí», sin exagerar el lunfardo.

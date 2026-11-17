@@ -15,20 +15,21 @@ from .operational import SafeOperationalFormatter
 
 
 class ProductionSecurityTests(SimpleTestCase):
-    def test_production_forces_guard_and_missing_storage_prevents_provider_calls(self):
+    def test_production_uses_ai_without_persistent_storage(self):
         code = '''
 from unittest.mock import patch
 from django.conf import settings
 from api.services.recommendations import generate_recommendation
 from api.test_recommendations import weather_snapshot
 assert settings.GROQ_GUARD_ENABLED is True
-assert settings.GROQ_BUDGET_PATH == ''
-with patch('api.services.recommendations.Groq') as provider:
-    result = generate_recommendation(weather_snapshot())
-    assert result == {'estado': 'no_disponible', 'texto': None}
-    provider.assert_not_called()
+assert not hasattr(settings, 'GROQ_BUDGET_PATH')
+expected = {'estado': 'disponible', 'texto': 'Advice'}
+with patch('api.services.recommendations._generate_uncached', return_value=expected) as provider:
+    assert generate_recommendation(weather_snapshot()) == expected
+    assert generate_recommendation(weather_snapshot()) == expected
+    assert provider.call_count == 1
 '''
-        result = self.run_production(code, GROQ_GUARD_ENABLED='false', GROQ_BUDGET_PATH='')
+        result = self.run_production(code, GROQ_GUARD_ENABLED='false', GROQ_BUDGET_PATH='', GROQ_MODEL='test-model')
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_production_budget_rejects_voice_abuse_with_cors_and_keeps_health_available(self):

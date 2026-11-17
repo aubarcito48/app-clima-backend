@@ -1,104 +1,78 @@
-# Control de uso de Groq
+# Groq usage protection on Render Free
 
-## Comportamiento
+The persistent daily counter has been removed. AI works without a disk, database
+or additional environment variables. Old GROQ_BUDGET_PATH and
+GROQ_DAILY_REQUEST_LIMIT variables are ignored and can be removed.
+There is no application-wide daily budget or guaranteed financial spending cap.
 
-- Máximo inicial: **200 intentos nuevos por día UTC** para toda la aplicación,
-  compartido entre procesos que usan el mismo archivo SQLite. No es por visitante.
-- Cada intento reserva cupo mediante una transacción antes de construir el cliente.
-  Errores HTTP, respuestas inválidas, timeouts y procesos interrumpidos consumen cupo.
-  No se devuelve la reserva ni se reintenta automáticamente.
-- Consejos ya validados: caché de 300 segundos. Clave SHA-256 sobre mensajes completos,
-  idioma, modelo, director, límite de salida y versión. Cambiar clima o prompt invalida
-  la clave. No se cachean consejos inválidos como éxitos.
-- Una reserva pendiente impide duplicar llamadas simultáneas iguales. El segundo
-  visitante recibe clima sin IA mientras termina la primera; puede reutilizar la caché
-  en una consulta posterior. Una reserva abandonada expira a los 120 segundos.
-- Errores tienen un enfriamiento por clave de 30 segundos para evitar martillar Groq.
-- Máximo 512 claves activas. Con la caché llena no se evictan reservas ni se abre
-  una llamada adicional. Las entradas vencidas se eliminan en la siguiente consulta.
-- Si el cupo se agota, una caché válida sigue disponible. Si falta el archivo, está
-  bloqueado o falla, se retorna `recomendacion: {estado: no_disponible, texto: null}`.
-  La orquestación conserva el clima actual y pronóstico, sin cambiar el contrato HTTP.
-  El frontend ya presenta ese estado sin intentar leer consejos anteriores.
+## In-memory advice cache
 
-## Configuración
+- Validated advice is reused for 300 seconds by default. The SHA-256 key includes
+  full weather context, prompt, language, model, director and completion cap.
+- Maximum 512 active keys per process. Expired entries are reclaimed; when full,
+  new keys return weather without AI rather than growing memory without a bound.
+- A lock reserves each key before calling Groq. Concurrent identical requests in
+  the same worker do not call Groq twice. The second request returns weather
+  without AI while the first is pending; later requests can reuse valid advice.
+- Pending keys expire after 120 seconds. Reservation identity prevents an old
+  request from overwriting a newer result after its reservation expired.
+- Provider failures and invalid responses have a 30-second cooldown per key.
+  They are never cached as successful advice. The SDK does not retry automatically.
+- Cached values are copied before returning them so callers cannot mutate them.
+- Only hashes, advice and expiry times are held in memory; no disk writes or
+  stored credentials, prompts or client IPs. Restarting clears the cache and
+  permits normal AI calls again. Multiple workers have separate caches.
+
+Optional settings (existing defaults require no Render configuration):
 
 ```dotenv
-# Ejemplo exclusivamente si /var/data es un disco persistente YA contratado/montado:
-GROQ_BUDGET_PATH=/var/data/stitchweather/groq.sqlite3
-GROQ_DAILY_REQUEST_LIMIT=200
 GROQ_CACHE_TTL_SECONDS=300
 GROQ_CACHE_MAX_ENTRIES=512
 API_TRUSTED_PROXY_HOPS=0
 ```
 
-En producción el guard es obligatorio. Si `GROQ_BUDGET_PATH` está vacío o ausente,
-la IA no llama a Groq; el servicio meteorológico sigue funcionando. **No desplegar
-esperando IA activa sin preparar primero ese almacenamiento.** En desarrollo, sin
-variable, el archivo predeterminado está en `.runtime/groq.sqlite3` (ignorado por Git).
-Un valor vacío explícito también desactiva llamadas en desarrollo.
+The production cache guard stays enabled. No plan upgrade or paid resource is
+required by these protections. The provider account's own quotas still apply.
 
-SQLite usa la biblioteca estándar: no añade dependencias ni un servicio contratado.
-El directorio debe ser privado del usuario del servicio y el mismo para todos los
-workers. No sirve un filesystem efímero ni archivos separados por réplica. En Render,
-la documentación exige un servicio pago para adjuntar un disco persistente; **esta
-implementación no lo contrata**. Si se quieren varias réplicas, hace falta migrar el
-almacén a un servicio compartido con operaciones atómicas; no copiar el archivo.
+## Request limits and graceful degradation
 
-Poner el cupo en `0` detiene intentos nuevos, conservando consejos válidos cacheados.
-No borrar el archivo para reiniciar el servidor: se perdería el cupo consumido.
-Conservarlo en despliegues. El contador cambia solo al avanzar de día UTC; retroceder
-el reloj no concede otro cupo. La caché y las pausas dependen del reloj del servidor.
+Before consuming the process-wide request allowance, a sliding 60-second window
+limits each visitor:
 
-Se guardan hashes, consejo validado, vencimiento y el contador del día. No se guardan
-claves, prompts, consultas libres ni IPs en disco. No hay endpoint público para
-reiniciar o modificar el presupuesto. No se registran cuerpos ni credenciales.
-
-## Límites por visitante
-
-Antes de consumir el límite global del proceso se aplica un máximo móvil de 60 s:
-
-| Ruta | Por visitante/minuto | Global/minuto predeterminado |
+| Route | Per visitor/minute | Global per process/minute |
 | --- | ---: | ---: |
 | clima | 6 | 30 |
 | lugares | 40 | 120 |
 | alertas | 20 | 60 |
 | voz | 3 | 6 |
 
-Respuesta `429`, `Retry-After` y `Cache-Control: no-store`. Health queda fuera.
-Se usa la IP de conexión, normalizada y convertida en HMAC con `SECRET_KEY`; IPv6
-comparte cupo por /64. Los visitantes detrás de una misma IP pública comparten cupo.
-Hasta 4096 claves ruta/visitante en memoria por proceso; al llenarse se rechazan
-claves nuevas hasta liberar entradas vencidas. Los rechazos por visitante no gastan
-el cupo global de solicitudes ni alcanzan los proveedores.
+Rate-limited HTTP requests return 429, Retry-After and Cache-Control: no-store.
+Health is exempt. AI failures or a pending/full cache return the existing advice
+state no_disponible while preserving current weather and forecast. The frontend
+already handles this state without reading a previous advice aloud.
 
-`X-Forwarded-For` se ignora por defecto. Detrás de un proxy, verificar su cadena y
-que añada/sobrescriba la IP real, y cerrar el acceso directo al servidor; solo entonces
-configurar `API_TRUSTED_PROXY_HOPS` con el número de proxies confiables. Se cuenta
-desde la derecha, nunca desde el primer valor enviado por el cliente. Configurarlo
-sin verificar permite evasión; dejarlo en 0 detrás de un proxy puede agrupar usuarios
-en una sola IP. Esa verificación del hosting queda pendiente antes del despliegue.
+Visitor identifiers use an HMAC of the connection IP; IPv6 addresses within one
+/64 share an allowance. Up to 4096 route/visitor keys are retained per process;
+new keys are rejected until expired entries can be reclaimed. Users behind one
+public IP share an allowance. Limits reset on process restart.
 
-Los límites por minuto son por proceso y se reinician con él; no son la garantía
-financiera. Un bot distribuido puede consumir el cupo diario de IA y afectar su
-disponibilidad, aunque no puede superar las reservas del archivo compartido. No se
-afirma protección total frente a DDoS ni cobertura de costos de OpenWeather, voz,
-ancho de banda, Vercel o Render. Verificar también los planes y límites de esas cuentas.
+X-Forwarded-For is ignored by default. Only set API_TRUSTED_PROXY_HOPS after
+verifying the ingress appends/overwrites the real client IP, the number of trusted
+hops, and that clients cannot access the application directly. Trusted hops are
+counted from the right, not from an arbitrary client-supplied prefix. Leaving 0
+behind a proxy may group visitors together; setting it without verification may
+allow spoofing. This hosting verification remains separate from the cache change.
 
-## Validación y operación
+These are abuse and availability controls, not total DDoS protection or a financial
+hard cap. Distributed clients can still consume provider quotas. Check Groq,
+OpenWeather, Render and Vercel account plans separately; this code does not change
+billing settings or upgrade any plan.
 
-`python scripts/test_backend.py --verbosity 0` prueba sin red y con una carpeta
-temporal aislada para este contador. Incluye concurrencia, cupo tras recrear el almacén,
-cambio de día, reloj hacia atrás, caducidad de caché, separación por clima/idioma/modelo,
-errores consumidos, almacenamiento roto, modo degradado y aislamiento por visitante.
-No se usó la clave real ni se generaron llamadas facturables para estas pruebas.
+## Verification
 
-Antes de desplegar: verificar plan Groq y límites del proveedor, persistencia del archivo
-y cadena real de proxies. El límite es de **intentos**, no de dólares ni tokens; se
-conservan los límites existentes de contexto/salida. Otros proyectos o claves de la
-misma organización Groq no pasan por este contador. No modificar precios/modelos
-asumiendo que 200 consultas siempre cuestan lo mismo.
-
-Referencias: [discos de Render](https://render.com/docs/disks),
-[X-Forwarded-For](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For),
-[límites de Groq](https://console.groq.com/docs/rate-limits).
+Run python scripts/test_backend.py --verbosity 0. Tests use mock HTTP transports
+and no real API calls. They cover concurrent reservations, valid cache expiry,
+failed/invalid response cooldowns, cache capacity, late completion ownership,
+cache reset, production AI without persistent storage, weather-only fallback,
+visitor isolation and forwarded-header handling. The suite again forbids database
+writes; the fixed read-only geographic catalog is its only allowed SQLite access.
