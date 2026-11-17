@@ -77,6 +77,29 @@ class OfficialAlertsTests(SimpleTestCase):
             cache.clear(); self.documents[PREFIX+'notice.xml'] = cap(geometry=geometry)
             self.assertEqual(self.query().json()['estado'], 'parcial')
 
+    def test_short_term_official_path_is_accepted_without_loosening_host_validation(self):
+        url = 'https://ssl.smn.gob.ar/feeds/CAP/avisocortoplazo/2026_10_25_cap_es.xml'
+        self.documents[alerts.FEED] = feed('notice').replace((PREFIX+'notice.xml').encode(), url.encode())
+        self.documents[url] = cap()
+        self.assertEqual(self.query().json()['estado'], 'disponible')
+        self.assertEqual(alerts._cap_url(url), url)
+
+    def test_more_than_thirty_two_documents_are_checked_and_cached(self):
+        names = [f'notice{i}' for i in range(40)]
+        self.documents = {alerts.FEED: feed(*names), **{
+            PREFIX + name + '.xml': cap(identifier=name) for name in names}}
+        self.assertEqual(self.query().json()['estado'], 'disponible')
+        self.assertEqual(len(self.query().json()['alertas']), 40)
+        self.assertEqual(self.download.call_count, 41)
+
+    def test_truly_incomplete_catalog_remains_partial_and_refreshes_after_thirty_seconds(self):
+        self.documents[alerts.FEED] = feed('notice', 'broken')
+        self.documents[PREFIX+'broken.xml'] = b'not XML'
+        self.assertEqual(self.query().json()['estado'], 'parcial')
+        self.documents[PREFIX+'broken.xml'] = cap(identifier='recovered')
+        self.clock.return_value = NOW + timedelta(seconds=31)
+        self.assertEqual(self.query().json()['estado'], 'disponible')
+
     def test_expired_test_private_and_cancelled_notices_are_not_current_alerts(self):
         for document in (cap(expires='2026-10-25T11:00:00Z').replace(b'2026-10-25T13:00:00Z', b'2026-10-25T09:00:00Z'), cap(status='Test'), cap(scope='Private')):
             cache.clear(); self.documents[PREFIX+'notice.xml'] = document

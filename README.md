@@ -16,6 +16,22 @@ Se eliminó el contador diario persistente: no hay un presupuesto global diario 
 La caché y los límites por minuto son por proceso y se reinician con él.
 Ver [configuración, pruebas y límites de la protección](docs/GROQ-USAGE-GUARD.md).
 
+## Mapas y alertas oficiales
+
+El frontend ofrece un mapa bajo demanda junto a las alertas: temperatura, lluvia
+y viento mediante Weather Maps 1.0. `GET /api/v1/mapa/` actúa como proxy fijo de
+imágenes PNG; usa la clave existente de OpenWeather sin entregarla al navegador.
+Mantiene hasta 32 imágenes por proceso durante cinco minutos y corta ráfagas
+cuando el proveedor falla. Límites iniciales: 40 solicitudes/minuto por proceso
+y 24 por visitante. No requiere disco, variables nuevas ni llamadas a Groq.
+El mapa base utiliza OpenStreetMap con atribución visible; no se precarga.
+
+El catálogo SMN admite hasta 256 documentos únicos e incluye la ruta oficial
+`avisocortoplazo`, además de las alertas generales. Se conserva el estado parcial
+si un documento falla, se supera el límite o no termina a tiempo. Las consultas
+comparten catálogo por tres minutos (30 segundos si fue parcial), sin duplicar
+descargas concurrentes dentro del proceso. Los textos oficiales conservan español.
+
 ## Buscador local de ciudades
 
 `GET /api/v1/lugares/?q=Cordoba,AR` consulta nuestro índice de nombres y alias,

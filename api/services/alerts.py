@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from email.utils import parsedate_to_datetime
 import math
 import re
+import threading
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 
@@ -16,8 +17,9 @@ FEED = "https://ssl.smn.gob.ar/CAP/AR.php"
 SOURCE = "https://www.smn.gob.ar/alertas"
 NS = {"c": "urn:oasis:names:tc:emergency:cap:1.2"}
 MAX_BYTES = 1024 * 1024
-CACHE_KEY = "smn-cap-catalog-v1"
-MAX_DOCUMENTS = 32
+CACHE_KEY = "smn-cap-catalog-v2"
+MAX_DOCUMENTS = 256
+_catalog_lock = threading.Lock()
 
 
 def _utc(value):
@@ -41,7 +43,7 @@ def _cap_url(value):
     url = urlsplit(value)
     if url.scheme != "https" or url.netloc != "ssl.smn.gob.ar" or url.query or url.fragment:
         raise ValueError("Untrusted CAP URL")
-    if not re.fullmatch(r"/feeds/CAP/(?:xml_generados|cap_salida)/[A-Za-z0-9_.-]+\.xml", url.path):
+    if not re.fullmatch(r"/feeds/CAP/(?:xml_generados|cap_salida|avisocortoplazo)/[A-Za-z0-9_.-]+\.xml", url.path):
         raise ValueError("Unexpected CAP path")
     return value
 
@@ -159,7 +161,7 @@ def _download(client, url):
 
 
 def _load_catalog(now):
-    with httpx.Client(timeout=httpx.Timeout(3, connect=2), follow_redirects=False) as client:
+    with httpx.Client(timeout=httpx.Timeout(3, connect=2), follow_redirects=False, trust_env=False) as client:
         root = _xml(_download(client, FEED))
         channel = root.find('channel')
         if root.tag != 'rss' or channel is None:
@@ -168,20 +170,22 @@ def _load_catalog(now):
         if published.tzinfo is None or now-published > timedelta(hours=24) or published-now > timedelta(minutes=15):
             raise ValueError("Outdated feed")
         items = channel.findall('item')
-        partial = len(items) > MAX_DOCUMENTS
         urls = []
-        for item in items[:MAX_DOCUMENTS]:
+        partial = False
+        for item in items:
             try:
                 url = _cap_url(item.findtext('link') or '')
                 if url not in urls:
                     urls.append(url)
             except ValueError:
                 partial = True
+        partial = partial or len(urls) > MAX_DOCUMENTS
+        urls = urls[:MAX_DOCUMENTS]
         def document(url):
             return _parse_cap(_download(client, url), url)
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=8) as pool:
             tasks = [pool.submit(document, url) for url in urls]
-            done, pending = wait(tasks, timeout=8)
+            done, pending = wait(tasks, timeout=10)
             for task in pending:
                 task.cancel()
         records = []
@@ -195,6 +199,30 @@ def _load_catalog(now):
         return {"records": records, "partial": partial or bool(pending), "published": _iso(published), "checked": _iso(now)}
 
 
+def _catalog(now):
+    def fresh():
+        value = cache.get(CACHE_KEY)
+        if value and timedelta(0) <= now - _utc(value['checked']) < timedelta(
+                seconds=30 if value['partial'] else 180):
+            return value
+        return None
+    cached = fresh()
+    if cached is not None:
+        return cached
+    # Share catalog across cities without a burst of duplicate feed downloads.
+    if not _catalog_lock.acquire(blocking=False):
+        raise ValueError('Catalog refresh already pending')
+    try:
+        cached = fresh()
+        if cached is not None:
+            return cached
+        result = _load_catalog(now)
+        cache.set(CACHE_KEY, result, 30 if result['partial'] else 180)
+        return result
+    finally:
+        _catalog_lock.release()
+
+
 def query_alerts(latitude, longitude, country):
     now = timezone.now()
     base = {
@@ -206,10 +234,7 @@ def query_alerts(latitude, longitude, country):
     if country != "AR":
         return base
     try:
-        catalog = cache.get(CACHE_KEY)
-        if catalog is None:
-            catalog = _load_catalog(now)
-            cache.set(CACHE_KEY, catalog, 30 if catalog['partial'] else 180)
+        catalog = _catalog(now)
         if now - _utc(catalog['published']) > timedelta(hours=24):
             return base
         base['fuente'].update(consultado_en_utc=catalog['checked'], publicado_en_utc=catalog['published'])

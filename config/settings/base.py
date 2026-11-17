@@ -61,6 +61,7 @@ GROQ_CACHE_MAX_ENTRIES = env_int('GROQ_CACHE_MAX_ENTRIES', 512, minimum=1, maxim
 # Set hops only after verifying that the ingress appends/overwrites X-Forwarded-For.
 API_TRUSTED_PROXY_HOPS = env_int('API_TRUSTED_PROXY_HOPS', 0, minimum=0, maximum=5)
 API_VISITOR_REQUESTS_PER_MINUTE = {
+    '/api/v1/mapa/': 24,
     '/api/v1/clima/': 6, '/api/v1/lugares/': 40,
     '/api/v1/alertas/': 20, '/api/v1/voz/': 3,
 }
@@ -81,6 +82,7 @@ ISA_RHUBARB_PATH = Path(os.getenv('ISA_RHUBARB_PATH', '').strip() or (
 # Límites compartidos por todos los visitantes del proceso, sin confiar en X-Forwarded-For.
 API_RATE_LIMIT_ENABLED = False
 API_REQUESTS_PER_MINUTE = {
+    '/api/v1/mapa/': env_int('API_MAP_REQUESTS_PER_MINUTE', 40, minimum=1, maximum=60),
     '/api/v1/clima/': env_int('API_CLIMATE_REQUESTS_PER_MINUTE', 30, minimum=1, maximum=300),
     '/api/v1/lugares/': env_int('API_PLACES_REQUESTS_PER_MINUTE', 120, minimum=1, maximum=600),
     '/api/v1/alertas/': env_int('API_ALERTS_REQUESTS_PER_MINUTE', 60, minimum=1, maximum=300),
