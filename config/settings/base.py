@@ -1,4 +1,4 @@
-"""Configuración común de la API sin persistencia."""
+"""Configuración común de la API y del presupuesto persistente de IA."""
 
 import os
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
-from .environment import env_int, env_list, env_timeout, required_secret
+from .environment import env_bool, env_int, env_list, env_timeout, required_secret
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env", override=False)
@@ -55,6 +55,18 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "").strip() or "openai/gpt-oss-20b"
 GROQ_CONNECT_TIMEOUT_SECONDS = env_timeout("GROQ_CONNECT_TIMEOUT_SECONDS", 3)
 GROQ_READ_TIMEOUT_SECONDS = env_timeout("GROQ_READ_TIMEOUT_SECONDS", 8)
 GROQ_MAX_COMPLETION_TOKENS = env_int("GROQ_MAX_COMPLETION_TOKENS", 160, minimum=32, maximum=512)
+GROQ_GUARD_ENABLED = env_bool('GROQ_GUARD_ENABLED', default=True)
+GROQ_BUDGET_PATH = os.getenv('GROQ_BUDGET_PATH', str(BASE_DIR / '.runtime' / 'groq.sqlite3')).strip()
+GROQ_DAILY_REQUEST_LIMIT = env_int('GROQ_DAILY_REQUEST_LIMIT', 200, minimum=0, maximum=10000)
+GROQ_CACHE_TTL_SECONDS = env_int('GROQ_CACHE_TTL_SECONDS', 300, minimum=1, maximum=900)
+GROQ_CACHE_MAX_ENTRIES = env_int('GROQ_CACHE_MAX_ENTRIES', 512, minimum=1, maximum=5000)
+# Set hops only after verifying that the ingress appends/overwrites X-Forwarded-For.
+API_TRUSTED_PROXY_HOPS = env_int('API_TRUSTED_PROXY_HOPS', 0, minimum=0, maximum=5)
+API_VISITOR_REQUESTS_PER_MINUTE = {
+    '/api/v1/clima/': 6, '/api/v1/lugares/': 40,
+    '/api/v1/alertas/': 20, '/api/v1/voz/': 3,
+}
+API_VISITOR_MAX_ENTRIES = 4096
 ISA_DIRECTOR = os.getenv('ISA_DIRECTOR', 'groq').strip().lower()
 if ISA_DIRECTOR not in ('groq', 'local'):
     raise ImproperlyConfigured('ISA_DIRECTOR must be groq or local')

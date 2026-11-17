@@ -210,6 +210,21 @@ def _completion_text(response, *, director='groq', language='es'):
 
 
 def generate_recommendation(snapshot: WeatherSnapshot, *, transport=None, language='es'):
+    if not settings.GROQ_API_KEY.strip() or not settings.GROQ_MODEL.strip():
+        return _unavailable()
+    if settings.GROQ_GUARD_ENABLED:
+        from .groq_guard import guarded_advice
+        try:
+            director = _director_mode()
+            messages = build_messages(snapshot, language=language, director=director)
+        except (TypeError, ValueError, OverflowError):
+            return _unavailable()
+        return guarded_advice(messages, language, director, lambda: _generate_uncached(
+            snapshot, transport=transport, language=language))
+    return _generate_uncached(snapshot, transport=transport, language=language)
+
+
+def _generate_uncached(snapshot: WeatherSnapshot, *, transport=None, language='es'):
     key, model = settings.GROQ_API_KEY.strip(), settings.GROQ_MODEL.strip()
     if not key or not model:
         return _unavailable()

@@ -1,4 +1,6 @@
-"""Producción sin persistencia. El despliegue pertenece a TK10."""
+"""Producción con corte seguro de IA si falta su presupuesto persistente."""
+
+import os
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -10,6 +12,9 @@ if env_bool("DJANGO_DEBUG", default=False):
 
 DEBUG = False
 API_RATE_LIMIT_ENABLED = True
+GROQ_GUARD_ENABLED = True
+# No implicit ephemeral counter in production. Empty path disables new AI calls.
+GROQ_BUDGET_PATH = os.getenv('GROQ_BUDGET_PATH', '').strip()
 
 if not ALLOWED_HOSTS or not all(exact_host(host) for host in ALLOWED_HOSTS):  # noqa: F405
     raise ImproperlyConfigured("Producción requiere DJANGO_ALLOWED_HOSTS explícitos, sin comodines.")

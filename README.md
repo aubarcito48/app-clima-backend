@@ -2,6 +2,21 @@
 
 API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones, consulta el clima y pronóstico de OpenWeather, y genera recomendaciones con Groq en español o inglés. No guarda datos de usuarios. Las sugerencias usan un catálogo geográfico local de solo lectura, sin API externa.
 
+## Protección del uso de IA
+
+Caché compartida de consejos válidos por 5 minutos, máximo 200 intentos nuevos
+de Groq por día UTC y límites por visitante además del límite global por minuto.
+El mismo modelo y director siguen generando los consejos. La caché incluye idioma,
+contexto meteorológico, prompt y configuración: no mezcla español e inglés.
+El presupuesto cuenta errores y llamadas interrumpidas; no hay reintentos del SDK.
+Con el cupo agotado, el clima sigue disponible y la IA devuelve `no_disponible`.
+
+**Producción requiere `GROQ_BUDGET_PATH` absoluto en almacenamiento persistente.**
+Sin esa configuración o con el contador inaccesible, no se hacen llamadas nuevas
+a Groq. El archivo local efímero de Render no sirve como límite entre reinicios.
+No se contrató almacenamiento ni se cambió el plan del proveedor.
+Ver [configuración, pruebas y límites de la protección](docs/GROQ-USAGE-GUARD.md).
+
 ## Buscador local de ciudades
 
 `GET /api/v1/lugares/?q=Cordoba,AR` consulta nuestro índice de nombres y alias,
@@ -12,8 +27,8 @@ desempata; se excluyen alias ambiguos de tres letras mayúsculas.
 
 El [catálogo y su procedencia](data/README.md) se incluyen en el repositorio.
 No hay descargas durante el arranque o las consultas. No requiere un servicio
-de base de datos ni un disco persistente de Render: SQLite se utiliza únicamente
-como formato de índice estático, abierto con `mode=ro&immutable=1`.
+de base de datos ni un disco persistente para el buscador: su SQLite es un índice
+estático abierto con `mode=ro&immutable=1`, separado del presupuesto de IA.
 
 Los consejos en español usan voseo y vocabulario argentino cotidiano, priorizando
 formas como «Usá una campera liviana», «llevá» y «elegí», sin exagerar el lunfardo.
