@@ -17,7 +17,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from api.services.place_catalog import CATALOG_PATH, normalize_name
+from api.services.places.place_catalog import CATALOG_PATH
+from api.services.places.place_catalog import normalize_name
 
 SOURCES = {
     'cities1000.zip': '46a35f52226f34dd56b64d57b4e9bb380a8ad06605354f8095ea9cdc561aba2c',

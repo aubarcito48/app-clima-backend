@@ -1,0 +1,401 @@
+"""Official SMN CAP notices, filtered by geometry and validity; no risk inference."""
+
+from concurrent.futures import ThreadPoolExecutor, wait
+from datetime import datetime, timedelta, timezone as dt_timezone
+from email.utils import parsedate_to_datetime
+import math
+import hashlib
+import re
+import threading
+import time
+from urllib.parse import urlsplit
+import xml.etree.ElementTree as ET
+
+from django.core.cache import cache
+from django.conf import settings
+from django.utils import timezone
+import httpx
+
+FEED = "https://ssl.smn.gob.ar/CAP/AR.php"
+SOURCE = "https://www.smn.gob.ar/alertas"
+NS = {"c": "urn:oasis:names:tc:emergency:cap:1.2"}
+MAX_BYTES = 1024 * 1024
+CACHE_KEY = "smn-cap-catalog-v3"
+MAX_DOCUMENTS = 256
+_catalog_lock = threading.Lock()
+_recovery_lock = threading.Lock()
+_download_lock = threading.Lock()
+_last_download = 0
+BACKOFF_KEY = 'smn-provider-backoff-v1'
+
+
+class SMNRateLimited(ValueError):
+    pass
+
+
+def _failure_reason(error, stage):
+    if isinstance(error, SMNRateLimited):
+        return stage + '_http_429'
+    if isinstance(error, httpx.HTTPStatusError):
+        return f'{stage}_http_{error.response.status_code}'
+    if isinstance(error, httpx.TimeoutException):
+        return stage + '_timeout'
+    if isinstance(error, httpx.HTTPError):
+        return stage + '_red'
+    return stage + '_formato'
+
+
+def _utc(value):
+    date = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if date.tzinfo is None:
+        raise ValueError("Missing timezone")
+    return date.astimezone(dt_timezone.utc)
+
+
+def _iso(date):
+    return date.isoformat().replace("+00:00", "Z")
+
+
+def _xml(body):
+    if len(body) > MAX_BYTES or b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
+        raise ValueError("Unsafe or oversized XML")
+    return ET.fromstring(body)
+
+
+def _cap_url(value):
+    url = urlsplit(value)
+    if url.scheme != "https" or url.netloc != "ssl.smn.gob.ar" or url.query or url.fragment:
+        raise ValueError("Untrusted CAP URL")
+    if not re.fullmatch(r"/feeds/CAP/(?:xml_generados|cap_salida|avisocortoplazo)/[A-Za-z0-9_.-]+\.xml", url.path):
+        raise ValueError("Unexpected CAP path")
+    return value
+
+
+def _point(value):
+    latitude, longitude = map(float, value.split(","))
+    if not math.isfinite(latitude) or not math.isfinite(longitude) or not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        raise ValueError("Invalid point")
+    return latitude, longitude
+
+
+def _geometry(area):
+    shapes = []
+    for element in area.findall("c:polygon", NS):
+        points = [_point(value) for value in (element.text or "").split()]
+        if not 4 <= len(points) <= 10000 or points[0] != points[-1]:
+            raise ValueError("Invalid polygon")
+        shapes.append(("polygon", points))
+    for element in area.findall("c:circle", NS):
+        center, radius = (element.text or "").split()
+        radius = float(radius)
+        if not math.isfinite(radius) or not 0 <= radius <= 20002:
+            raise ValueError("Invalid circle")
+        shapes.append(("circle", (_point(center), radius)))
+    if not shapes:
+        raise ValueError("No geographic coverage")
+    return shapes
+
+
+def _inside(latitude, longitude, shape):
+    kind, points = shape
+    if kind == "circle":
+        (lat, lon), radius = points
+        a, b = math.radians(latitude), math.radians(lat)
+        distance = math.sin((a-b)/2)**2 + math.cos(a)*math.cos(b)*math.sin(math.radians(longitude-lon)/2)**2
+        return 6371.0088 * 2 * math.asin(math.sqrt(min(1, distance))) <= radius
+    inside = False
+    for (y1, x1), (y2, x2) in zip(points, points[1:]):
+        cross = (longitude-x1)*(y2-y1) - (latitude-y1)*(x2-x1)
+        if abs(cross) < 1e-9 and min(x1,x2)-1e-9 <= longitude <= max(x1,x2)+1e-9 and min(y1,y2)-1e-9 <= latitude <= max(y1,y2)+1e-9:
+            return True
+        if (y1 > latitude) != (y2 > latitude) and longitude < (x2-x1)*(latitude-y1)/(y2-y1)+x1:
+            inside = not inside
+    return inside
+
+
+def _text(node, name, *, required=False, limit=20000):
+    value = (node.findtext("c:" + name, default="", namespaces=NS) or "").strip()
+    if len(value) > limit or (required and not value):
+        raise ValueError("Invalid CAP field")
+    return value
+
+
+def _parse_cap(body, url, language='es'):
+    root = _xml(body)
+    if root.tag != "{" + NS['c'] + "}alert":
+        raise ValueError("Unexpected CAP document")
+    if _text(root, "status") != "Actual" or _text(root, "scope") != "Public":
+        return None
+    identifier = _text(root, "identifier", required=True, limit=512)
+    kind = _text(root, "msgType")
+    if kind not in {"Alert", "Update", "Cancel"}:
+        return None
+    sent = _utc(_text(root, "sent", required=True))
+    references = []
+    for reference in _text(root, "references").split():
+        fields = reference.split(",")
+        if len(fields) != 3:
+            raise ValueError("Invalid CAP references")
+        references.append(fields[1])
+    result = {"id": identifier, "sent": sent, "references": references, "cancel": kind == "Cancel", "notices": []}
+    if result['cancel']:
+        return result
+    infos = root.findall("c:info", NS)
+    preferred = [info for info in infos if _text(info, 'language').lower().startswith(language)]
+    for info in preferred or infos[:1]:
+        start = _utc(_text(info, "onset") or _text(info, "effective") or _iso(sent))
+        end = _utc(_text(info, "expires", required=True))
+        if end <= start:
+            raise ValueError("Invalid CAP period")
+        areas = info.findall("c:area", NS)
+        shapes = [shape for area in areas for shape in _geometry(area)]
+        if not shapes:
+            raise ValueError("Missing CAP areas")
+        severity = _text(info, "severity")
+        if severity not in {"Extreme", "Severe", "Moderate", "Minor", "Unknown"}:
+            raise ValueError("Invalid severity")
+        result['notices'].append({
+            "identificador": identifier,
+            "fenomeno": _text(info, "event", required=True, limit=200),
+            "severidad": severity,
+            "urgencia": _text(info, "urgency", limit=100),
+            "certeza": _text(info, "certainty", limit=100),
+            "inicio_utc": _iso(start), "fin_utc": _iso(end), "emitido_en_utc": _iso(sent),
+            "descripcion": _text(info, "description", required=True),
+            "recomendaciones": _text(info, "instruction"),
+            "zona": "; ".join(filter(None, (_text(area, 'areaDesc', limit=3000) for area in areas)))[:5000] or "Área delimitada por el SMN",
+            "url": url, "shapes": shapes,
+        })
+    if not result['notices']:
+        raise ValueError("Missing CAP information")
+    return result
+
+
+def _download(client, url):
+    global _last_download
+    # Single paced connection for documents. Shared Render egress can be throttled.
+    # Honor a provider backoff before opening any further source request.
+    with _download_lock:
+        if cache.get(BACKOFF_KEY):
+            raise SMNRateLimited()
+        if url != FEED:
+            delay = .5 - (time.monotonic() - _last_download)
+            if delay > 0:
+                time.sleep(delay)
+            _last_download = time.monotonic()
+        return _download_response(client, url)
+
+
+def _download_response(client, url):
+    with client.stream("GET", url, headers={"Accept": "application/xml, text/xml, application/rss+xml"}) as response:
+        if response.status_code == 429:
+            try:
+                delay = int(response.headers.get('Retry-After', '60'))
+            except ValueError:
+                try:
+                    retry_date = parsedate_to_datetime(response.headers['Retry-After'])
+                    delay = math.ceil((retry_date - timezone.now()).total_seconds())
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    delay = 60
+            cache.set(BACKOFF_KEY, True, max(60, min(delay, 86400)))
+            raise SMNRateLimited()
+        response.raise_for_status()
+        chunks, size = [], 0
+        for chunk in response.iter_bytes():
+            size += len(chunk)
+            if size > MAX_BYTES:
+                raise ValueError("Oversized source document")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+
+def _load_catalog(now):
+    with httpx.Client(timeout=httpx.Timeout(5, connect=3), follow_redirects=False, trust_env=False,
+                      headers={'User-Agent': 'StitchWeather/1.0 (+https://app-clima-ecru.vercel.app/)'}) as client:
+        root = _xml(_download(client, FEED))
+        channel = root.find('channel')
+        if root.tag != 'rss' or channel is None:
+            raise ValueError("Unexpected feed")
+        published = parsedate_to_datetime(channel.findtext('lastBuildDate') or channel.findtext('pubDate') or '')
+        if published.tzinfo is None or now-published > timedelta(hours=24) or published-now > timedelta(minutes=15):
+            raise ValueError("Outdated feed")
+        items = channel.findall('item')
+        urls = []
+        partial = False
+        for item in items:
+            try:
+                url = _cap_url(item.findtext('link') or '')
+                if url not in urls:
+                    urls.append(url)
+            except ValueError:
+                partial = True
+        partial = partial or len(urls) > MAX_DOCUMENTS
+        urls = urls[:MAX_DOCUMENTS]
+        def document(url):
+            key = 'smn-cap-document-v1-' + hashlib.sha256(url.encode()).hexdigest()
+            cached = cache.get(key)
+            if cached is not None:
+                return cached['record']
+            result = _parse_cap(_download(client, url), url)
+            # Keep successful downloads while retrying the missing documents.
+            cache.set(key, {'record': result}, 3600)
+            return result
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tasks = [pool.submit(document, url) for url in urls]
+            done, pending = wait(tasks, timeout=16)
+            for task in pending:
+                task.cancel()
+        # Include requests that finished while the executor was shutting down.
+        completed = [task for task in tasks if task.done() and not task.cancelled()]
+        records, failures = [], {}
+        for task in completed:
+            try:
+                record = task.result()
+                if record is not None:
+                    records.append(record)
+            except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError) as error:
+                partial = True
+                reason = _failure_reason(error, 'documento')
+                failures[reason] = failures.get(reason, 0) + 1
+        remaining = sum(task.cancelled() for task in tasks)
+        return {"records": records, "partial": partial or bool(remaining), "published": _iso(published), "checked": _iso(now),
+                "verification": {'esperados': len(urls), 'verificados': len(completed)-sum(failures.values()),
+                                 'pendientes': remaining, 'fallos': failures}}
+
+
+def _recoverable(catalog):
+    verification = catalog.get('verification', {})
+    failures = verification.get('fallos', {})
+    return catalog['partial'] and (verification.get('pendientes', 0) > 0 or any(
+        code.endswith(('_timeout', '_red', '_http_429')) for code in failures))
+
+
+def _recover_catalog():
+    """One bounded recovery run per process; never bypass an SMN backoff."""
+    deadline = time.monotonic() + 240
+    try:
+        while time.monotonic() < deadline:
+            previous = cache.get(CACHE_KEY)
+            if previous is None or not _recoverable(previous):
+                return
+            if cache.get(BACKOFF_KEY):
+                time.sleep(5)
+                continue
+            if not _catalog_lock.acquire(blocking=False):
+                time.sleep(1)
+                continue
+            try:
+                result = _load_catalog(timezone.now())
+                cache.set(CACHE_KEY, result, 900)
+            except SMNRateLimited:
+                pass
+            except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError):
+                return
+            finally:
+                _catalog_lock.release()
+            time.sleep(2)
+    finally:
+        _recovery_lock.release()
+
+
+def _schedule_recovery(catalog):
+    if not settings.SMN_BACKGROUND_RECOVERY or not _recoverable(catalog):
+        return
+    if not _recovery_lock.acquire(blocking=False):
+        return
+    try:
+        threading.Thread(target=_recover_catalog, name='smn-recovery', daemon=True).start()
+    except RuntimeError:
+        _recovery_lock.release()
+
+
+def _catalog(now):
+    def fresh():
+        value = cache.get(CACHE_KEY)
+        if value and timedelta(0) <= now - _utc(value['checked']) < timedelta(
+                seconds=30 if value['partial'] else 180):
+            return value
+        return None
+    cached = fresh()
+    if cached is not None:
+        _schedule_recovery(cached)
+        return cached
+    if _recovery_lock.locked():
+        previous = cache.get(CACHE_KEY)
+        if previous is not None:
+            return previous
+    if cache.get(BACKOFF_KEY):
+        # Preserve already verified notices during the wait, without claiming completeness.
+        previous = cache.get(CACHE_KEY)
+        if previous is not None:
+            previous['partial'] = True
+            previous['verification']['fallos']['documento_http_429'] = max(
+                1, previous['verification']['fallos'].get('documento_http_429', 0))
+            _schedule_recovery(previous)
+            return previous
+        raise SMNRateLimited()
+    # Share catalog across cities without a burst of duplicate feed downloads.
+    if not _catalog_lock.acquire(blocking=False):
+        raise ValueError('Catalog refresh already pending')
+    try:
+        cached = fresh()
+        if cached is not None:
+            return cached
+        result = _load_catalog(now)
+        cache.set(CACHE_KEY, result, 900)
+        _schedule_recovery(result)
+        return result
+    finally:
+        _catalog_lock.release()
+
+
+def query_alerts(latitude, longitude, country):
+    if country in {'BR', 'CL', 'UY'}:
+        from api.services.alerts.international_alerts import query_international_alerts
+        return query_international_alerts(latitude, longitude, country)
+    now = timezone.now()
+    base = {
+        "ubicacion": {"latitud": latitude, "longitud": longitude, "pais": country},
+        "estado": "fuera_cobertura" if country != "AR" else "no_disponible",
+        "alertas": [],
+        "fuente": {"nombre": "Servicio Meteorológico Nacional", "url": SOURCE, "consultado_en_utc": _iso(now), "publicado_en_utc": None},
+    }
+    if country != "AR":
+        return base
+    try:
+        catalog = _catalog(now)
+        if now - _utc(catalog['published']) > timedelta(hours=24):
+            return base
+        base['fuente'].update(consultado_en_utc=catalog['checked'], publicado_en_utc=catalog['published'])
+        base['fuente']['verificacion'] = catalog.get('verification', {})
+        base.update(estado="parcial" if catalog['partial'] else "disponible",
+                    alertas=_select_notices(catalog['records'], latitude, longitude, now))
+    except (httpx.HTTPError, ValueError, ET.ParseError, TypeError, OverflowError) as error:
+        base['fuente']['verificacion'] = {'fallos': {_failure_reason(error, 'indice'): 1}}
+    return base
+
+
+def _select_notices(records, latitude, longitude, now):
+    """Apply CAP updates/cancellations, validity and geometry for every provider."""
+    suppressed = {ref for record in records for ref in record['references']}
+    notices, seen, content_seen = [], set(), set()
+    for record in sorted(records, key=lambda row: row['sent'], reverse=True):
+        if record['cancel'] or record['id'] in suppressed or record['id'] in seen:
+            continue
+        seen.add(record['id'])
+        for notice in record['notices']:
+            if _utc(notice['fin_utc']) <= now or _utc(notice['emitido_en_utc']) > now + timedelta(minutes=15):
+                continue
+            if any(_inside(latitude, longitude, shape) for shape in notice['shapes']):
+                # Different regional CAP documents can describe the same notice at
+                # this point. Keep the newest official document, but never merge
+                # different periods, severity, instructions or named areas.
+                content = tuple(notice[key] for key in (
+                    'fenomeno', 'severidad', 'urgencia', 'certeza', 'inicio_utc',
+                    'fin_utc', 'descripcion', 'recomendaciones', 'zona'))
+                if content in content_seen:
+                    continue
+                content_seen.add(content)
+                notices.append({key: value for key, value in notice.items() if key != 'shapes'})
+    rank = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3, "Unknown": 4}
+    return sorted(notices, key=lambda row: (rank[row['severidad']], row['inicio_utc']))

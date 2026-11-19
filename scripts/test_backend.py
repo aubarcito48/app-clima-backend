@@ -41,7 +41,7 @@ def main():
     # Instalar los bloqueos antes de inicializar Django. Un acceso accidental
     # falla aun si el cliente de proveedor normalmente captura errores de red.
     with ExitStack() as stack:
-        from api.services.place_catalog import catalog_uri
+        from api.services.places.place_catalog import catalog_uri
         original_connect = sqlite3.connect
         def catalog_only(database, *connect_args, **kwargs):
             if database != catalog_uri() or kwargs.get('uri') is not True:

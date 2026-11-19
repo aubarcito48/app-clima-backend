@@ -50,9 +50,9 @@ def main():
     import django
     django.setup()
     from django.conf import settings
-    from api.services.voice import synthesize
-    from api.services.isa_local_director import direct_locally
-    from api.services.lip_sync import read_mouth_cues
+    from api.services.assistant.voice.voice import synthesize
+    from api.services.assistant.direction.isa_local_director import direct_locally
+    from api.services.assistant.alignment.lip_sync import read_mouth_cues
     settings.ISA_LIP_SYNC = 'rhubarb'
     args.output.mkdir(parents=True, exist_ok=True)
     cases = []

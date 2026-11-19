@@ -2,6 +2,9 @@
 
 API de la app del clima, desarrollada con Python y Django. Resuelve ubicaciones, consulta el clima y pronóstico de OpenWeather, y genera recomendaciones con Groq en español o inglés. No guarda datos de usuarios. Las sugerencias usan un catálogo geográfico local de solo lectura, sin API externa.
 
+La organización por funcionalidades y sus dependencias se describen en
+[ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Protección del uso de IA
 
 Caché en memoria de consejos válidos por 5 minutos y límites por visitante,

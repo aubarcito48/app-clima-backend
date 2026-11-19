@@ -66,8 +66,8 @@ def main():
     import django
     django.setup()
     from django.conf import settings
-    from api.services.voice import synthesize
-    from api.services.isa_local_director import direct_locally
+    from api.services.assistant.voice.voice import synthesize
+    from api.services.assistant.direction.isa_local_director import direct_locally
     from classifier import labels_at, read_recording
     if not Path(settings.ISA_RHUBARB_PATH).is_file():
         parser.error('A local Rhubarb binary is needed to bootstrap weak labels')

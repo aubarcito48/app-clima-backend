@@ -8,7 +8,8 @@ sys.path[:0]=[str(ROOT),str(ROOT/'experiments/isa_classifier')]
 from classifier import read_recording,timeline
 from rhythm_features import features_for_model
 import temporal
-from api.services.own_lip_sync import attach_alignment,infer
+from api.services.assistant.alignment.own_lip_sync import attach_alignment
+from api.services.assistant.alignment.own_lip_sync import infer
 
 def main():
     corpus=ROOT/'tmp/isa-own-classifier/corpus-review-v2'

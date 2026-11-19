@@ -9,7 +9,7 @@ import sys
 import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from api.services.lip_sync import read_mouth_cues
+from api.services.assistant.alignment.lip_sync import read_mouth_cues
 
 
 def build_preview(audio):

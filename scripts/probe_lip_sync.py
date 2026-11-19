@@ -21,8 +21,8 @@ def main():
     import django
     django.setup()
     from django.conf import settings
-    from api.services.isa_local_director import direct_locally
-    from api.services.voice import synthesize
+    from api.services.assistant.direction.isa_local_director import direct_locally
+    from api.services.assistant.voice.voice import synthesize
     from preview_lip_sync import build_preview
     if settings.ISA_LIP_SYNC != 'rhubarb':
         parser.error('Set ISA_LIP_SYNC=rhubarb in the local backend environment first')

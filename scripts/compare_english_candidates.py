@@ -52,7 +52,7 @@ def worker(key,scale,output):
     import onnxruntime as rt
     from piper import PiperVoice,SynthesisConfig
     from piper.config import PiperConfig
-    from api.services.voice_chunks import prepare_voice_chunks
+    from api.services.assistant.voice.voice_chunks import prepare_voice_chunks
     if key in ASSETS:
         _,name,_,_=ASSETS[key];model=FOLDER/'models'/key/(name+'.onnx')
     else:model=ROOT/'models/piper-sharvard/en_US-lessac-medium.onnx'
@@ -75,7 +75,7 @@ def worker(key,scale,output):
 
 def run():
     sys.path.insert(0,str(ROOT))
-    from api.services.lip_sync import add_lip_sync
+    from api.services.assistant.alignment.lip_sync import add_lip_sync
     FOLDER.mkdir(parents=True,exist_ok=True)
     binary=ROOT/'models/rhubarb/runtime/rhubarb.exe'
     if not binary.is_file():

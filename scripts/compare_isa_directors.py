@@ -42,10 +42,12 @@ def main():
     django.setup()
     from django.conf import settings
     from django.test import override_settings
-    from api.services.isa_local_director import direct_locally
-    from api.services.isa_performance import read_segments
-    from api.services.recommendations import SYSTEM_PROMPT,_completion_text,GROQ_BASE_URL
-    from api.services.voice import synthesize
+    from api.services.assistant.direction.isa_local_director import direct_locally
+    from api.services.assistant.direction.isa_performance import read_segments
+    from api.services.assistant.recommendations import SYSTEM_PROMPT
+    from api.services.assistant.recommendations import _completion_text
+    from api.services.assistant.recommendations import GROQ_BASE_URL
+    from api.services.assistant.voice.voice import synthesize
     from groq import Groq
     import httpx
 

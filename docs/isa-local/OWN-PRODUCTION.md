@@ -17,7 +17,7 @@ El WAV público contiene `isac`, `isav` y `isam` con `engine=isa-rf-v2`.
 El cliente usa las políticas visuales revisadas para ese identificador y mantiene
 la ruta anterior para WAV históricos. No se activa el empalme inglés candidato.
 
-Pesos versionados en `api/services/isa_ml/weights/`, exportados sin pickle.
+Pesos versionados en `api/services/assistant/alignment/isa_ml/weights/`, exportados sin pickle.
 Procedencia y hashes en `provenance.json`. La inferencia sólo necesita NumPy.
 Código de inferencia congelado, sin importar archivos de `experiments/` o `tmp/`.
 

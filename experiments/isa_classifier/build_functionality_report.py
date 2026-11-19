@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-from api.services.voice_chunks import speech_text
+from api.services.assistant.voice.voice_chunks import speech_text
 
 root=Path(sys.argv[1]); root.mkdir(parents=True,exist_ok=True)
 normalization=[]

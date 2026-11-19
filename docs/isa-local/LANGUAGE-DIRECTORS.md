@@ -3,13 +3,13 @@
 Separación local solicitada por Nahuel para poder calibrar Cori sin modificar
 la interpretación española que ya aprobó.
 
-- `api/services/isa_director_es.py`: reglas españolas existentes, sin cambios de
+- `api/services/assistant/direction/isa_director_es.py`: reglas españolas existentes, sin cambios de
   palabras clave, gesto, velocidad, energía o pausa.
-- `api/services/isa_director_en.py`: reglas inglesas independientes y parámetros
+- `api/services/assistant/direction/isa_director_en.py`: reglas inglesas independientes y parámetros
   de entrega propios, inicialmente con los valores anteriores.
-- `api/services/isa_director_shared.py`: limpieza y límites de fragmentos; no
+- `api/services/assistant/direction/isa_director_shared.py`: limpieza y límites de fragmentos; no
   contiene parámetros de voz ni decisiones de interpretación por idioma.
-- `api/services/isa_local_director.py`: mantiene la interfaz pública
+- `api/services/assistant/direction/isa_local_director.py`: mantiene la interfaz pública
   `direct_locally(text, language=...)` y selecciona el director correspondiente.
 
 No hace falta agregar variables: `ISA_DIRECTOR=local` continúa funcionando.

@@ -9,7 +9,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from api.services.isa_local_director import direct_locally
+from api.services.assistant.direction.isa_local_director import direct_locally
 from classifier import read_recording
 from narration import app_performance, performance_rows
 

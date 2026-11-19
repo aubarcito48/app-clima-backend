@@ -14,7 +14,7 @@ mode=sys.argv.pop(1)
 try:
  if mode=='piper':
   script=sys.argv.pop(1);sys.argv[0]=script;runpy.run_path(script,run_name='__main__')
- else:runpy.run_module('api.services.own_lip_sync',run_name='__main__')
+ else:runpy.run_module('api.services.assistant.alignment.own_lip_sync',run_name='__main__')
 finally:
  if sys.platform=='win32':
   class Memory(ctypes.Structure):
@@ -38,7 +38,7 @@ def main():
  os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings.development')
  import django;django.setup()
  from django.conf import settings
- from api.services.isa_local_director import direct_locally
+ from api.services.assistant.direction.isa_local_director import direct_locally
  sys.path.insert(0,str(ROOT/'experiments/isa_classifier'))
  from narration import app_performance
  from classifier import read_recording
@@ -52,7 +52,7 @@ def main():
   for i,text in enumerate(texts):
    spoken,segments=app_performance(text,language,direct_locally)
    payload=json.dumps({'texto':spoken,'segmentos':segments},ensure_ascii=False).encode()
-   private,piper=run('piper',[str(ROOT/'api/services/voice_worker.py'),str(settings.ISA_MODEL_DIR),language,'--performance','--own-lip-sync'],payload)
+   private,piper=run('piper',[str(ROOT/'api/services/assistant/voice/voice_worker.py'),str(settings.ISA_MODEL_DIR),language,'--performance','--own-lip-sync'],payload)
    public,rf=run('rf',[language],private)
    file=out/f'{language}-{i}.wav';file.write_bytes(public)
    _,_,cues,_=read_recording(file)

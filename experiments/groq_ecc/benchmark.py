@@ -19,8 +19,10 @@ django.setup()
 from django.conf import settings
 import httpx
 from groq import Groq, APIError
-from api.services.recommendations import build_messages, _completion_text, GROQ_BASE_URL
-from api.test_recommendations import weather_snapshot
+from api.services.assistant.recommendations import build_messages
+from api.services.assistant.recommendations import _completion_text
+from api.services.assistant.recommendations import GROQ_BASE_URL
+from api.tests.assistant.test_recommendations import weather_snapshot
 
 OUT=ROOT/'tmp/groq-ecc-benchmark-v1'
 SCENARIOS=[('cold',3,0,65,'cielo claro'),('hot',33,12,40,'cielo claro'),

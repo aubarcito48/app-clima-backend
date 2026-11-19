@@ -40,9 +40,10 @@ def main():
     import django
     django.setup()
     from django.conf import settings
-    from api.services.lip_sync import add_lip_sync, read_mouth_cues
-    from api.services.voice_worker import VOICES
-    from api.services.voice_chunks import prepare_voice_chunks
+    from api.services.assistant.alignment.lip_sync import add_lip_sync
+    from api.services.assistant.alignment.lip_sync import read_mouth_cues
+    from api.services.assistant.voice.voice_worker import VOICES
+    from api.services.assistant.voice.voice_chunks import prepare_voice_chunks
     from phonetic_alignment import expand_diphthongs, phone_shapes
     language = args.language
     selected = [r for r in source['recordings'] if r['language'] == language]

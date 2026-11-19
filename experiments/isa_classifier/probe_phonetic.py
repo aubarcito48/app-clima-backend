@@ -43,10 +43,10 @@ def synthesize_case(language, folder, advice=None, speed_factors=None):
     import numpy as np
     from piper import SynthesisConfig
     from django.conf import settings
-    from api.services.voice_chunks import prepare_voice_chunks
-    from api.services.voice_worker import VOICES
-    from api.services.isa_local_director import direct_locally
-    from api.services.isa_performance import append_timeline
+    from api.services.assistant.voice.voice_chunks import prepare_voice_chunks
+    from api.services.assistant.voice.voice_worker import VOICES
+    from api.services.assistant.direction.isa_local_director import direct_locally
+    from api.services.assistant.direction.isa_performance import append_timeline
     name, speaker, _ = VOICES[language]
     model = Path(settings.ISA_MODEL_DIR) / name
     def fingerprint():
@@ -117,7 +117,8 @@ def build_demo(folder):
     from classifier import read_recording, timeline
     from rhythm_features import features_for_model
     from django.conf import settings
-    from api.services.lip_sync import add_lip_sync, read_mouth_cues
+    from api.services.assistant.alignment.lip_sync import add_lip_sync
+    from api.services.assistant.alignment.lip_sync import read_mouth_cues
     cases = []
     for language in ('es', 'en'):
         info = json.loads((folder / f'phones-{language}.json').read_text(encoding='utf8'))

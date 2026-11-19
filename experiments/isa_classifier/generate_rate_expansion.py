@@ -75,7 +75,8 @@ def main():
     django.setup()
     import onnxruntime as rt
     from django.conf import settings
-    from api.services.lip_sync import add_lip_sync, read_mouth_cues
+    from api.services.assistant.alignment.lip_sync import add_lip_sync
+    from api.services.assistant.alignment.lip_sync import read_mouth_cues
     rows = []
     language = args.language
     for group in [r for r in plan if r['language'] == language]:

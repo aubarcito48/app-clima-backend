@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'experiments/isa_classifier'
-TARGET=ROOT/'api/services/isa_ml'
+TARGET=ROOT/'api/services/assistant/alignment/isa_ml'
 FUNCTIONS={
  'classifier':{'audio_features','labels_at','timeline'},
  'temporal':set(),

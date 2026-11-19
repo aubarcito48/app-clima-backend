@@ -16,7 +16,7 @@ Including another URLconf
 """
 from django.urls import include, path
 
-handler500 = "api.views.server_error"
+handler500 = "api.views.errors.server_error"
 
 urlpatterns = [
     path('api/v1/', include('api.urls')),

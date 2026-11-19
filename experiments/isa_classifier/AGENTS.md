@@ -4,7 +4,7 @@
   español «¡Buenas, explorador!» / «¡Hasta luego, explorador!»;
   inglés «Hello, explorer!» / «See you later, explorer!».
 - Usar `narration.app_performance` y contrastar sus frases y pausas con
-  `../app-clima/src/app/service/isabel-voice.ts`. Los consejos son cortos,
+  `../app-clima/src/app/service/assistant/voice/isabel-voice.ts`. Los consejos son cortos,
   como los de Groq: máximo 40 palabras y 280 caracteres en el consejo central.
 - El saludo tiene pausa de 160 ms y la despedida de 0 ms, como la app.
 - Medir por separado el consejo para que las frases repetidas no inflen las métricas.
