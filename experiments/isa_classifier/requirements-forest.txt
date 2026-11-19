@@ -1,2 +1,0 @@
-# Experimental environment only.
-scikit-learn==1.9.1

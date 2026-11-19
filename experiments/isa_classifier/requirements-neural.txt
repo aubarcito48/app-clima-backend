@@ -1,2 +1,0 @@
-# Training only, in tmp/isa-phoneme-env. Portable inference uses existing NumPy.
-scikit-learn==1.9.1

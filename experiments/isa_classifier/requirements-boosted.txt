@@ -1,3 +1,0 @@
-# Experimental environment only; not backend production requirements.
-xgboost==3.4.1
-scipy==1.18.1
