@@ -15,7 +15,7 @@ from api.services.assistant.alignment.own_lip_sync import classify_after_synthes
 from api.services.assistant.direction.isa_performance import read_segments
 from api.services.assistant.voice.voice import _gate, VoiceBusy, VoiceUnavailable
 from api.services.assistant.voice.voice_chunks import stream_voice_parts
-from api.services.assistant.voice.voice_process import render_parts
+from api.services.assistant.voice.voice_process import render_parts, reuse_status
 
 
 def _event(value):
@@ -75,11 +75,12 @@ def synthesize_stream(text, language='es', *, segments=None):
             yield _event({'type': 'audio', 'index': index, 'total': len(groups),
                           'audio': base64.b64encode(audio).decode('ascii'),
                           'segments': groups[index]['segmentos'],
+                          'model_reused': reuse_status()['model_reused'],
                           'elapsed_ms': round((monotonic() - started) * 1000)})
             sent += 1
         if sent != len(groups):
             raise VoiceUnavailable()
-        yield _event({'type': 'done', 'total': sent})
+        yield _event({'type': 'done', 'total': sent, **reuse_status()})
     except (OSError, ValueError, wave.Error, subprocess.TimeoutExpired, VoiceUnavailable) as exc:
         if not sent:
             raise VoiceUnavailable() from exc

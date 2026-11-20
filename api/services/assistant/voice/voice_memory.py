@@ -36,13 +36,26 @@ def memory_snapshot():
     return measurements
 
 
+def can_retain_voice():
+    """Keep 96 MiB available to the rest of a memory-limited Linux service."""
+    if sys.platform != 'linux':
+        return True
+    snapshot = memory_snapshot()
+    current = snapshot.get('cgroup_current_mib')
+    limit = snapshot.get('cgroup_limit_mib')
+    # Unknown container accounting must not silently enable retention in Linux.
+    return current is not None and limit is not None and limit - current >= 96
+
+
 def trace_voice_memory(stage, chunk=None, tokens=None):
     if sys.platform != 'linux':
         return
     # Lista cerrada: ningún argumento del usuario puede convertirse en un campo.
     if stage not in ('request_start', 'worker_start', 'libraries_loaded', 'model_loading',
                      'phonemizing', 'phonemes_ready', 'inference_start', 'inference_done',
-                     'model_ready', 'chunk_done', 'complete', 'worker_failed', 'timeout'):
+                     'model_ready', 'chunk_done', 'complete', 'worker_failed', 'timeout',
+                     'model_reused', 'model_retained', 'memory_release', 'idle_release',
+                     'reuse_limit_release'):
         return
     event = {'event': 'isa_memory', 'engine': 'piper', 'stage': stage, **memory_snapshot()}
     if type(chunk) is int and chunk >= 0:
