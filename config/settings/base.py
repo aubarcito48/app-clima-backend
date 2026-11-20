@@ -70,6 +70,8 @@ ISA_DIRECTOR = os.getenv('ISA_DIRECTOR', 'groq').strip().lower()
 if ISA_DIRECTOR not in ('groq', 'local'):
     raise ImproperlyConfigured('ISA_DIRECTOR must be groq or local')
 ISA_MODEL_DIR = Path(os.getenv('ISA_MODEL_DIR', '').strip() or BASE_DIR / 'models' / 'piper-sharvard')
+ISA_VOICE_KEEPALIVE_SECONDS = env_int('ISA_VOICE_KEEPALIVE_SECONDS', 0, minimum=0, maximum=120)
+ISA_VOICE_STREAM_ENABLED = env_bool('ISA_VOICE_STREAM_ENABLED', default=True)
 ISA_LIP_SYNC = os.getenv('ISA_LIP_SYNC', 'own').strip().lower()
 # Legacy deployment value selects our engine too; no Rhubarb process is launched.
 if ISA_LIP_SYNC not in ('off', 'own', 'rhubarb'):

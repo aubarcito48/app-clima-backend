@@ -3,7 +3,8 @@
 import json
 import unicodedata
 
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
+from django.conf import settings
 from django.views.decorators.cache import never_cache
 
 from api.responses import error_response
@@ -12,6 +13,7 @@ from api.services.assistant.voice.voice import VoiceBusy
 from api.services.assistant.voice.voice import VoiceUnavailable
 from api.services.assistant.voice.voice import synthesize
 from api.services.assistant.direction.isa_performance import read_segments
+from api.services.assistant.voice.voice_stream import PreparedStream, synthesize_stream
 
 
 def _unique_object(pairs):
@@ -55,6 +57,14 @@ def voice(request):
         except (ValueError, TypeError, OverflowError):
             return error_response('ENTRADA_INVALIDA', 'Interpretación de Isa inválida.', status=400)
     try:
+        if (settings.ISA_VOICE_STREAM_ENABLED
+                and 'application/x-ndjson' in request.headers.get('Accept', '').split(',')):
+            stream = PreparedStream(synthesize_stream(text, **options))
+            response = StreamingHttpResponse(stream, content_type='application/x-ndjson')
+            response['X-Accel-Buffering'] = 'no'
+            response['X-Content-Type-Options'] = 'nosniff'
+            response['Cache-Control'] = 'no-store, no-transform'
+            return response
         audio = synthesize(text, **options)
     except VoiceBusy:
         response = error_response('VOZ_OCUPADA', 'Isa está ocupada. Volvé a intentar en unos segundos.', status=429)

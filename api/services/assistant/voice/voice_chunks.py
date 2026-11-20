@@ -48,3 +48,35 @@ def split_voice_phonemes(phonemes):
             chunk.pop()
         if chunk:
             yield chunk
+
+
+def stream_voice_parts(payload):
+    """Group complete phrases without changing text or performance settings."""
+    from api.services.assistant.direction.isa_performance import read_segments
+
+    text = payload['texto']
+    if payload.get('segmentos'):
+        segments = read_segments(payload['segmentos'], text, max_segments=6)
+    else:
+        segments = [
+            {'text': phrase, 'gesture': 'isa-awake', 'speed': 1, 'energy': 1, 'pause_ms': 0}
+            for phrase in re.split(r'(?<=[.!?])\s+', ' '.join(text.split())) if phrase
+        ]
+    groups = []
+    for segment in segments:
+        limit = 100 if len(groups) <= 1 else 180
+        if (groups and len(' '.join(part['text'] for part in groups[-1]))
+                + len(segment['text']) + 1 <= limit):
+            groups[-1].append(segment)
+        else:
+            groups.append([segment])
+    # At most six frames, even for unusually many short sentences.
+    while len(groups) > 6:
+        groups[-2].extend(groups.pop())
+    result = []
+    for group in groups:
+        # A neutral undirected text may contain more than six tiny sentences.
+        if len(group) > 6:
+            group = [{**group[0], 'text': ' '.join(part['text'] for part in group)}]
+        result.append({'texto': ' '.join(part['text'] for part in group), 'segmentos': group})
+    return result

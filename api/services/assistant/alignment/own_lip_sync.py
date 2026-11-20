@@ -64,9 +64,9 @@ def infer(audio, language):
     result=public+b'isam'+struct.pack('<I',len(marker))+marker+b'\0'*(len(marker)%2)
     return result[:4]+struct.pack('<I',len(result)-8)+result[8:]
 
-def classify_after_synthesis(audio, language):
+def classify_after_synthesis(audio, language, *, timeout=30):
     result=subprocess.run([sys.executable,'-X','utf8','-m','api.services.assistant.alignment.own_lip_sync',language],
-        input=audio,stdout=subprocess.PIPE,timeout=30,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),
+        input=audio,stdout=subprocess.PIPE,timeout=timeout,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),
         cwd=Path(__file__).resolve().parents[4])
     if result.returncode or not result.stdout:raise ValueError('RF inference failed')
     return result.stdout

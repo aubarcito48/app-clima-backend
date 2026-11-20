@@ -1,11 +1,13 @@
 """Piper worker: fixed female speaker, bounded inference and WAV on stdout."""
 
 from contextlib import redirect_stdout
+from functools import lru_cache
 import io
 import json
 import os
 from pathlib import Path
 import sys
+import struct
 import wave
 
 for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
@@ -13,6 +15,7 @@ for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from api.services.assistant.voice.voice_chunks import prepare_voice_chunks
+from api.services.assistant.voice.voice_chunks import stream_voice_parts
 from api.services.assistant.voice.voice_memory import trace_voice_memory
 from api.services.assistant.direction.isa_performance import append_timeline
 from api.services.assistant.direction.isa_performance import read_segments
@@ -25,7 +28,27 @@ VOICES = {
 }
 
 
-def main():
+@lru_cache(maxsize=1)
+def load_voice(model, config_path):
+    import onnxruntime as rt
+    from piper import PiperVoice
+    from piper.config import PiperConfig
+
+    config = PiperConfig.from_dict(json.loads(config_path.read_text(encoding='utf-8')))
+    options = rt.SessionOptions()
+    options.intra_op_num_threads = options.inter_op_num_threads = 1
+    options.execution_mode = rt.ExecutionMode.ORT_SEQUENTIAL
+    options.enable_cpu_mem_arena = False
+    options.enable_mem_pattern = False
+    options.add_session_config_entry('session.disable_prepacking', '1')
+    trace_voice_memory('model_loading')
+    voice = PiperVoice(session=rt.InferenceSession(
+        str(model), sess_options=options, providers=['CPUExecutionProvider']), config=config)
+    trace_voice_memory('model_ready')
+    return voice
+
+
+def main(raw=None):
     trace_voice_memory('worker_start')
     model_dir = Path(sys.argv[1])
     language = sys.argv[2] if len(sys.argv) > 2 else 'es'
@@ -43,7 +66,8 @@ def main():
         if not model.is_file():
             return 1
     phones, mouth_cues = [], []
-    raw = sys.stdin.buffer.read(8193 if performance else 2401).decode('utf-8')
+    if raw is None:
+        raw = sys.stdin.buffer.read(8193 if performance else 2401).decode('utf-8')
     payload = json.loads(raw) if performance else None
     text = payload['texto'] if performance else raw
     if not 1 <= len(text.strip()) <= 600 or '\x00' in text:
@@ -54,25 +78,14 @@ def main():
     timeline = []
     with redirect_stdout(sys.stderr):
         import numpy as np
-        import onnxruntime as rt
-        from piper import PiperVoice, SynthesisConfig
-        from piper.config import PiperConfig
+        from piper import SynthesisConfig
         trace_voice_memory('libraries_loaded')
 
-        config = PiperConfig.from_dict(json.loads(config_path.read_text(encoding='utf-8')))
+        voice = load_voice(model, config_path)
+        config = voice.config
         if (config.num_speakers != speakers or config.sample_rate != SAMPLE_RATE
                 or language == 'es' and config.speaker_id_map.get('F') != speaker):
             return 1
-        options = rt.SessionOptions()
-        options.intra_op_num_threads = options.inter_op_num_threads = 1
-        options.execution_mode = rt.ExecutionMode.ORT_SEQUENTIAL
-        options.enable_cpu_mem_arena = False
-        options.enable_mem_pattern = False
-        options.add_session_config_entry('session.disable_prepacking', '1')
-        trace_voice_memory('model_loading')
-        voice = PiperVoice(session=rt.InferenceSession(
-            str(model), sess_options=options, providers=['CPUExecutionProvider']), config=config)
-        trace_voice_memory('model_ready')
         trace_voice_memory('phonemizing')
         output = io.BytesIO()
         frames = 0
@@ -145,12 +158,43 @@ def main():
         if phones[-1]['end'] < frames / SAMPLE_RATE:
             phones.append({'phoneme': '.', 'start': phones[-1]['end'], 'end': frames / SAMPLE_RATE})
         audio = attach_alignment(audio, {'phonemes': phones, 'cues': mouth_cues})
-    sys.stdout.buffer.write(audio)
-    return 0
+    return audio
+
+
+def run():
+    if '--persistent' not in sys.argv[3:]:
+        audio = main()
+        if not isinstance(audio, bytes):
+            return 1
+        sys.stdout.buffer.write(audio)
+        return 0
+    while True:
+        header = sys.stdin.buffer.read(4)
+        if not header:
+            return 0
+        if len(header) != 4:
+            return 1
+        size = struct.unpack('<I', header)[0]
+        if not 0 < size <= 8192:
+            return 1
+        payload = sys.stdin.buffer.read(size)
+        if len(payload) != size:
+            return 1
+        raw = payload.decode('utf-8')
+        parts = ([json.dumps(part, ensure_ascii=False) for part in stream_voice_parts(json.loads(raw))]
+                 if '--stream' in sys.argv[3:] else [raw])
+        for part in parts:
+            audio = main(part)
+            if not isinstance(audio, bytes):
+                return 1
+            sys.stdout.buffer.write(struct.pack('<I', len(audio)) + audio)
+            sys.stdout.buffer.flush()
+        sys.stdout.buffer.write(struct.pack('<I', 0))
+        sys.stdout.buffer.flush()
 
 
 if __name__ == '__main__':
     try:
-        raise SystemExit(main())
+        raise SystemExit(run())
     except Exception:
         raise SystemExit(1)

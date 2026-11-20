@@ -1,4 +1,4 @@
-"""Piper local: una síntesis por proceso, sin red y con tiempo máximo."""
+"""Piper local: una solicitud a la vez, sin red y con tiempo máximo."""
 
 from pathlib import Path
 import json
@@ -11,6 +11,7 @@ from api.services.assistant.voice.voice_memory import trace_voice_memory
 from api.services.assistant.direction.isa_performance import read_segments
 from api.services.assistant.alignment.own_lip_sync import classify_after_synthesis
 from api.services.assistant.alignment.own_lip_sync import MAX_INTERNAL_AUDIO_BYTES
+from api.services.assistant.voice.voice_process import render
 
 
 _gate = threading.Lock()
@@ -35,16 +36,22 @@ def synthesize(text, language='es', *, segments=None):
         raise VoiceBusy()
     try:
         trace_voice_memory('request_start')
-        result = subprocess.run(
-            [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('voice_worker.py')),
+        command = [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('voice_worker.py')),
              str(settings.ISA_MODEL_DIR), language, *(['--performance'] if segments else []),
-             *(['--own-lip-sync'] if settings.ISA_LIP_SYNC in ('own', 'rhubarb') else [])],
-            input=(json.dumps({'texto': text, 'segmentos': segments}, ensure_ascii=False).encode('utf-8')
-                   if segments else text.encode('utf-8')), stdout=subprocess.PIPE, timeout=45,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-        )
-        audio = result.stdout
-        if (result.returncode != 0 or not 44 < len(audio) <= MAX_INTERNAL_AUDIO_BYTES
+             *(['--own-lip-sync'] if settings.ISA_LIP_SYNC in ('own', 'rhubarb') else [])]
+        payload = (json.dumps({'texto': text, 'segmentos': segments}, ensure_ascii=False).encode('utf-8')
+                   if segments else text.encode('utf-8'))
+        keepalive = settings.ISA_VOICE_KEEPALIVE_SECONDS
+        if keepalive:
+            audio = render(command, payload, timeout=45, keepalive=keepalive)
+            returncode = 0
+        else:
+            result = subprocess.run(
+                command, input=payload, stdout=subprocess.PIPE, timeout=45,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            audio, returncode = result.stdout, result.returncode
+        if (returncode != 0 or not 44 < len(audio) <= MAX_INTERNAL_AUDIO_BYTES
                 or audio[:4] != b'RIFF' or audio[8:12] != b'WAVE'):
             trace_voice_memory('worker_failed')
             raise VoiceUnavailable()

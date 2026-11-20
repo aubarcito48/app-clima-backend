@@ -32,5 +32,5 @@ class OperationalMiddleware:
             "duration_ms": max(0, int((monotonic() - started) * 1000)),
         })
         if request.path.startswith("/api/"):
-            response["Cache-Control"] = "no-store"
+            response["Cache-Control"] = "no-store, no-transform" if response.streaming else "no-store"
         return response
